@@ -1,0 +1,9 @@
+# ignore makefile
+makefile
+# ignore .o files
+*.o
+
+# ignore all files exept the ones with an extension
+*
+!/**/
+!*.*
