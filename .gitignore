@@ -1,9 +1,12 @@
 # ignore makefile
 makefile
+
 # ignore .o files
 *.o
 
-# ignore all files exept the ones with an extension
-*
-!/**/
-!*.*
+#ignore binary files
+mcm_ex_mpci
+mqsi
+
+# ignore image files
+*.pgm
