@@ -512,7 +512,7 @@ return;
 /*        functions for piecewise cubic hermite interpolation               */
 /*--------------------------------------------------------------------------*/
 
-double eval_hermite_poly
+double eval_cubic_hermite_poly
 
    (double z,             /* evaluation point (in [0,1])*/
     double *coeff)        /* coefficients of size 4 */
@@ -527,7 +527,7 @@ double eval_hermite_poly
 /* evaluation at z using Horner's method */
 return ((coeff[0] * z + coeff[1]) * z + coeff[2]) * z + coeff[3];
          
-}  /* eval_hermite_poly */
+}  /* eval_cubic_hermite_poly */
 
 /*-------------------------------------------------------------------------*/
 
@@ -542,7 +542,10 @@ void hermite_coeffs
 /*
    calculates coefficients of the piecewise cubic hermite for each interval
    and stores them in the coefficient matrix;
+   uses the standard basis {x^3, x^2, x, 1};
    the polynomials for each interval all have the domain [0,1]
+   derivative values d_i are implicitly mapped to h*d_i due to the 
+   mapping of the intervals to [0,1] and the chain rule
    * equidistant version *
 */  
 
@@ -1225,13 +1228,13 @@ if (fabs(dir_x) <= fabs(dir_y))
   /* evaluate corresponding hermite polynomial */ 
   if (offs < 1.0) 
      {
-     *neighbour1 = eval_hermite_poly (1-offs, coeff_x[j-1]+4*i); 
-     *neighbour2 = eval_hermite_poly (offs, coeff_x[j+1]+4*(i-1)); 
+     *neighbour1 = eval_cubic_hermite_poly (1-offs, coeff_x[j-1]+4*i); 
+     *neighbour2 = eval_cubic_hermite_poly (offs, coeff_x[j+1]+4*(i-1)); 
      }
   else 
      {
-     *neighbour1 = eval_hermite_poly (2-offs, coeff_x[j-1] + 4 * (i-1) ); 
-     *neighbour2 = eval_hermite_poly (offs-1, coeff_x[j+1] + 4 * i); 
+     *neighbour1 = eval_cubic_hermite_poly (2-offs, coeff_x[j-1] + 4 * (i-1) ); 
+     *neighbour2 = eval_cubic_hermite_poly (offs-1, coeff_x[j+1] + 4 * i); 
      }
   }
 
@@ -1249,13 +1252,13 @@ else
   /* evaluate corresponding hermite polynomial */      
  if (offs < 1.0) 
      {
-     *neighbour1 = eval_hermite_poly (1-offs, coeff_y[i-1] + 4 * j); 
-     *neighbour2 = eval_hermite_poly (offs, coeff_y[i+1] + 4 * (j-1)); 
+     *neighbour1 = eval_cubic_hermite_poly (1-offs, coeff_y[i-1] + 4 * j); 
+     *neighbour2 = eval_cubic_hermite_poly (offs, coeff_y[i+1] + 4 * (j-1)); 
      }
   else
      {
-     *neighbour1 = eval_hermite_poly (2-offs, coeff_y[i-1] + 4 * (j-1)); 
-     *neighbour2 = eval_hermite_poly (offs-1, coeff_y[i+1] + 4 * j); 
+     *neighbour1 = eval_cubic_hermite_poly (2-offs, coeff_y[i-1] + 4 * (j-1)); 
+     *neighbour2 = eval_cubic_hermite_poly (offs-1, coeff_y[i+1] + 4 * j); 
      }
      
   }

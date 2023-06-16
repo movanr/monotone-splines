@@ -10,3 +10,6 @@ mqsi
 
 # ignore image files
 *.pgm
+
+# ignore plot files
+*.dat
