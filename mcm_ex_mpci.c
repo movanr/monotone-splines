@@ -1259,13 +1259,12 @@ else
      {
      *neighbour1 = eval_cubic_hermite_poly (2-offs, coeff_y[i-1] + 4 * (j-1)); 
      *neighbour2 = eval_cubic_hermite_poly (offs-1, coeff_y[i+1] + 4 * j); 
-     }
-     
+     }  
   }
 
 return;
 
-}
+}  /* approx_neighbours */
 
 
 /*--------------------------------------------------------------------------*/

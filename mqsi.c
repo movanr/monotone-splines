@@ -23,98 +23,219 @@
 /*--------------------------------------------------------------------------*/
 
 #define EPS 1e-14 /* small constant */
+#define TRUE 1    
+#define FALSE 0     
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------*/
-/* https://www.geeksforgeeks.org/introduction-and-array-implementation-of-queue/ */
-// C program for array implementation of queue
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
- 
-// A structure to represent a queue (with positive integers as values)
-struct Queue {
-    long front, rear, size;
-    unsigned capacity;
-    long* array;
-};
- 
-// function to create a queue
-// of given capacity.
-// It initializes size of queue as 0
-struct Queue* createQueue(unsigned capacity)
-{
-    struct Queue* queue = (struct Queue*)malloc(
-        sizeof(struct Queue));
-    queue->capacity = capacity;
-    queue->front = queue->size = 0;
- 
-    // This is important, see the enqueue
-    queue->rear = capacity - 1;
-    queue->array = (long*)malloc(
-        queue->capacity * sizeof(long));
-    return queue;
-}
- 
-// Queue is full when size becomes
-// equal to the capacity
-int isFull(struct Queue* queue)
-{
-    return (queue->size == queue->capacity);
-}
- 
-// Queue is empty when size is 0
-int isEmpty(struct Queue* queue)
-{
-    return (queue->size == 0);
-}
- 
-// Function to add an item to the queue.
-// It changes rear and size
-void enqueue(struct Queue* queue, long item)
-{
-    if (isFull(queue))
-        return;
-    queue->rear = (queue->rear + 1)
-                  % queue->capacity;
-    queue->array[queue->rear] = item;
-    queue->size = queue->size + 1;
-    //printf("%d enqueued to queue\n", item);
-}
- 
-// Function to remove an item from queue.
-// It changes front and size
-long dequeue(struct Queue* queue)
-{
-    if (isEmpty(queue))
-        return -1;
-    long item = queue->array[queue->front];
-    queue->front = (queue->front + 1)
-                   % queue->capacity;
-    queue->size = queue->size - 1;
-    return item;
-}
- 
-// Function to get front of queue
-long front(struct Queue* queue)
-{
-    if (isEmpty(queue))
-        return -1;
-    return queue->array[queue->front];
-}
- 
-// Function to get rear of queue
-long rear(struct Queue* queue)
-{
-    if (isEmpty(queue))
-        return -1;
-    return queue->array[queue->rear];
-}
 
-void destroy(struct Queue* queue) {
-    free(queue->array);
-    free(queue);
-}
+void alloc_double_matrix
+
+     (double ***matrix,  /* matrix */
+      long   n1,         /* size in direction 1 */
+      long   n2)         /* size in direction 2 */
+
+/*
+  allocates memory for a double format matrix of size n1 * n2 
+*/
+
+{
+long i;    /* loop variable */
+
+*matrix = (double **) malloc (n1 * sizeof(double *));
+
+if (*matrix == NULL)
+   {
+   printf("alloc_double_matrix: not enough memory available\n");
+   exit(1);
+   }
+
+for (i=0; i<n1; i++)
+    {
+    (*matrix)[i] = (double *) malloc (n2 * sizeof(double));
+    if ((*matrix)[i] == NULL)
+       {
+       printf("alloc_double_matrix: not enough memory available\n");
+       exit(1);
+       }
+    }
+
+return;
+
+}  /* alloc_double_matrix */
+
+/*--------------------------------------------------------------------------*/
+
+void free_double_matrix
+
+     (double  **matrix,   /* matrix */
+      long    n1,         /* size in direction 1 */
+      long    n2)         /* size in direction 2 */
+
+/*
+  frees memory for a double format matrix of size n1 * n2
+*/
+
+{
+long i;   /* loop variable */
+
+for (i=0; i<n1; i++)
+free(matrix[i]);
+
+free(matrix);
+
+return;
+
+}  /* free_double_matrix */
+
+/*--------------------------------------------------------------------------*/
+
+void read_string
+
+     (char *v)         /* string to be read */
+
+/*
+  reads a string v
+*/
+
+{
+if (fgets (v, 80, stdin) == NULL)
+   {
+   printf ("read_string: cannot read value, aborting\n");
+   exit(1);
+   }
+
+if (v[strlen(v)-1] == '\n')
+   v[strlen(v)-1] = 0;
+
+return;
+
+}  /* read_string */
+
+/*--------------------------------------------------------------------------*/
+
+void skip_white_space_and_comments 
+
+     (FILE *inimage)  /* input file */
+
+/*
+  skips over white space and comments while reading the file
+*/
+
+{
+
+int   ch = 0;   /* holds a character */
+char  row[80];  /* for reading data */
+
+/* skip spaces */
+while (((ch = fgetc(inimage)) != EOF) && isspace(ch));
+  
+/* skip comments */
+if (ch == '#')
+   {
+   if (fgets(row, sizeof(row), inimage))
+      skip_white_space_and_comments (inimage);
+   else
+      {
+      printf("skip_white_space_and_comments: cannot read file\n");
+      exit(1);
+      }
+   }
+else
+   fseek (inimage, -1, SEEK_CUR);
+
+return;
+
+} /* skip_white_space_and_comments */
+
+/*--------------------------------------------------------------------------*/
+
+void read_pgm_to_double
+
+     (const char  *file_name,    /* name of pgm file */
+      long        *nx,           /* image size in x direction, output */
+      long        *ny,           /* image size in y direction, output */
+      double      ***u)          /* image, output */
+
+/*
+  reads a greyscale image that has been encoded in pgm format P5 to
+  an image u in double format;
+  allocates memory for the image u;
+  adds boundary layers of size 1 such that
+  - the relevant image pixels in x direction use the indices 1,...,nx
+  - the relevant image pixels in y direction use the indices 1,...,ny
+*/
+
+{
+char  row[80];      /* for reading data */
+long  i, j;         /* image indices */
+long  max_value;    /* maximum color value */
+FILE  *inimage;     /* input file */
+
+/* open file */
+inimage = fopen (file_name, "rb");
+if (inimage == NULL)
+   {
+   printf ("read_pgm_to_double: cannot open file '%s'\n", file_name);
+   exit(1);
+   }
+
+/* read header */
+if (fgets(row, 80, inimage) == NULL)
+   {
+   printf ("read_pgm_to_double: cannot read file\n");
+   exit(1);
+   }
+
+/* image type: P5 */
+if ((row[0] == 'P') && (row[1] == '5'))   
+   {
+   /* P5: grey scale image */
+   }
+else
+   {
+   printf ("read_pgm_to_double: unknown image format\n");
+   exit(1);
+   }
+
+/* read image size in x direction */
+skip_white_space_and_comments (inimage);
+if (!fscanf (inimage, "%ld", nx))
+   {
+   printf ("read_pgm_to_double: cannot read image size nx\n");
+   exit(1);
+   }
+
+/* read image size in x direction */
+skip_white_space_and_comments (inimage);
+if (!fscanf (inimage, "%ld", ny))
+   {
+   printf ("read_pgm_to_double: cannot read image size ny\n");
+   exit(1);
+   }
+
+/* read maximum grey value */
+skip_white_space_and_comments (inimage);
+if (!fscanf (inimage, "%ld", &max_value))
+   {
+   printf ("read_pgm_to_double: cannot read maximal value\n");
+   exit(1);
+   }
+fgetc(inimage);
+
+/* allocate memory */
+alloc_double_matrix (u, (*nx)+2, (*ny)+2);
+
+/* read image data row by row */
+for (j=1; j<=(*ny); j++)
+ for (i=1; i<=(*nx); i++)
+     (*u)[i][j] = (double) getc(inimage);
+
+/* close file */
+fclose (inimage);
+
+return;
+
+}  /* read_pgm_to_double */
 
 
 /*--------------------------------------------------------------------------*/
@@ -469,7 +590,6 @@ int is_monotone
 */
 
 {
-
     /* variables */
     double w, z, alpha, beta, gamma, t, sign;
 
@@ -714,107 +834,23 @@ void make_monotone
 
 /*--------------------------------------------------------------------------*/
 
-void mqsi_old
+void estimate_quadratic_derivs
 
-    (double h,    /* constant step size */
-     double *f,   /* signal values */
-     double *fx,  /* for testing TODO remove */
-     double *fxx, /* for testing TODO remove */
-     long n)      /* number of values */
+    (double h,
+     double *f,
+     double *fx,
+     double *fxx,
+     long   n)
 
 /*
-    Returns monotone quintic spline interpolant Q(x) such that 
-    Q(i*h) = f_i and is monotone increasing (decreasing) on 
-    all intervals that f_i is monotone increasing (decreasing)
-    * equidistant version*
+
 */
 
 {
-long i;                 /* loop variable */
-//double *fx;             /* first derivatives */
-//double *fxx;            /* second derivatives */
-double *fx_copy;
-double *fxx_copy;
-long shrink;            /* shrink factor */
-struct Queue* queue;    /* queue for indices */
-
-/* allocate memory */
-//fx = malloc(sizeof(double) * n); // TODO decomment
-//fxx = malloc(sizeof(double) * n); // TODO decomment 
-fx_copy =  malloc(sizeof(double) * n);
-fxx_copy = malloc(sizeof(double) * n);
-/* Approximate first and second derivatives  at X_i = i*h */
-//cubic_spline_derivs(h, f, fx, n); // TODO decomment
-//cubic_spline_second_derivs(h, f, fx, fxx, n); // TODO decomment
-
-/* initialize queue and shrink factor */
-queue = createQueue(n);
-shrink = 10;
-
-/* initialize derivative copies */
-for(i = 0; i < n; i++) {
-    fx_copy[i] = fx[i];
-    fxx_copy[i] = fxx[i];
-}
-
-for(i = 0; i < n-1; i++) {
-    if(!is_monotone_index(i, h, f, fx, fxx)) {
-        enqueue(queue, i);
-    }
-} 
-
-long counter = 0;
-
-while(!isEmpty(queue) && counter < 11) {
-    counter++;
-    i = dequeue(queue);
-
-    if(is_monotone_index(i, h, f, fx, fxx)) {
-        continue;
-    }
-    fx[i] = fx[i] - fx_copy[i]/shrink;
-    fx[i+1] = fx[i+1] - fx_copy[i+1]/shrink;
-    fxx[i] = fxx[i] - fxx_copy[i]/shrink;
-    fxx[i+1] = fxx[i+1] - fxx_copy[i+1]/shrink;
-
-    // sign change
-    if(fx[i]*sgn(fx_copy[i]) < 0) {
-        fx[i] = EPS/2;
-    }
-    if(fx[i+1]*sgn(fx_copy[i+1]) < 0) {
-        fx[i+1] = EPS/2;
-    }
-    if(fxx[i]*sgn(fxx_copy[i]) < 0) {
-        fxx[i] = EPS/2;
-    }
-    if(fxx[i+1]*sgn(fxx_copy[i+1]) < 0) {
-        fxx[i+1] = EPS/2;
-    }
-
-
-    if(!is_monotone_index(i, h, f, fx, fxx)) {
-        enqueue(queue, i);
-    }
-    if(!is_monotone_index((long)fmax(i-1, 0), h, f, fx, fxx)) {
-        enqueue(queue, (long)fmax(i-1, 0));
-    }
-    if(!is_monotone_index((long)fmin(i+1, n-2), h, f, fx, fxx)) {
-        enqueue(queue, (long)fmin(i+1, n-2));
-    }
-}
-
-
-
-
-/* free memory */
-//free(fx); // TODO decomment
-//free(fxx); // TODO decomment
-free(fx_copy);
-free(fxx_copy);
-destroy(queue);
 
 return;
-}  /* mqsi_old */
+
+}  /* estimate_quadratic_derivs */
 
 /*--------------------------------------------------------------------------*/
 
@@ -824,7 +860,9 @@ void mqsi
      double *f,
      double *fx,
      double *fxx,
-     long   n)
+     long   n,
+     int    estimate_derivs,
+     int    make_monotone)
 
 /*
     Computes monotone quintic spline interpolant Q(x) such that 
@@ -838,6 +876,7 @@ void mqsi
 */
 
 {
+double accuracy; 
 int *checking;
 int *growing;
 int *shrinking;
@@ -846,10 +885,18 @@ int *to_grow;
 int *to_shrink;
 int *flats;
 int *extrema;
+double *fx_copy;
+double *fxx_copy;
 
-double A, B, direction, dx, scale, step_size;
+double A, B, direction, dx, step_size;
 long i, j, nc, ng, ns;
 int searching;
+
+accuracy = sqrt(EPS);
+// to avoid complier warnings
+direction = 0.0;
+B = 0.0;
+A = 0.0;
 
 /* allocate memory */
 checking = malloc(sizeof(int)*n);
@@ -860,6 +907,9 @@ to_grow = malloc(sizeof(int)*n);
 to_shrink = malloc(sizeof(int)*n);
 flats = malloc(sizeof(int)*n);
 extrema = malloc(sizeof(int)*n);
+fx_copy = malloc(sizeof(double)*n);
+fxx_copy = malloc(sizeof(double)*n);
+
 
 /* Identify local extreme points and flat points */
 flats[0] = fabs(f[0] - f[1]) < EPS * (1.0 + fabs(f[0] + fabs(f[1])));
@@ -884,6 +934,7 @@ for(i = 1; i < n-1; i++) {
     derivatives at all points. Use zero-sloped quadratic interpolants
     at extrema with left/right neighbors to estimate curvature.
 */
+if(estimate_derivs) {
 for(i = 0; i < n; i++) {
     /* Initialize the curvature to be maximally large */
     fxx[i] = 1e54;
@@ -944,12 +995,14 @@ for(i = 0; i < n; i++) {
                 A = (f[i-2] + f[i] - 2*f[i-1])/(2*h*h);
                 B = (f[i] - f[i-2])/(2*h);
             }
+        
+            dx = 2.0 * A * h + B;
+            if(dx*direction >= 0.0) {
+                fx[i] = dx;
+                fxx[i] = A;
+            }
         }
-        dx = 2.0 * A * h + B;
-        if(dx*direction >= 0.0) {
-            fx[i] = dx;
-            fxx[i] = A;
-        }
+        
         /* --------------------------- */
         /* Quadratic centered at i (require that it has at least one
         neighbor that is not forced to zero slope) */
@@ -998,6 +1051,199 @@ for(i = 0; i < n; i++) {
         printf("fx[%ld] = %lf, fxx[%ld] = %lf\n", i, fx[i], i, fxx[i]);
     }
 } 
+}
+if(!make_monotone) {
+    printf("NO MONOTONICITY ENFORCED\n");
+    return;
+}
+
+/* ============================================================== */
+/*         Algorithm 3: Identify viable piecewise monotone        */
+/*        derivative values by doing a quasi-bisection search     */
+
+/* Store the initially estimated first and second derivative values */
+for(i = 0; i < n; i++) {
+    fx_copy[i] = fx[i];
+    fxx_copy[i] = fxx[i];
+}
+
+/* Identify which spline segments are not monotone and need to be fixed */
+for(i = 0; i < n; i++) {
+    checking[i] = 0;
+    shrinking[i] = 0;
+}
+nc = 0;
+ng = 0;
+ns = 0;
+for(i = 0; i < n-1; i++) {
+    /* Check for monotonicity on all segments that are not flat */
+    if((!(flats[i] && flats[i+1])) && (!(is_monotone_index(i, h, f, fx, fxx)))) {
+        /* Store points bounding nonmonotone segments in the to_shrink queue */
+        if(!shrinking[i]) {
+            shrinking[i] = TRUE; 
+            to_shrink[ns] = i;
+            ns++;
+        }
+        if(!shrinking[i+1]) {
+            shrinking[i+1] = TRUE;
+            to_shrink[ns] = i+1;
+            ns++;
+        }
+    }
+}
+/* Initialize step size to 1.0 (will be halved at beginning of loop) */
+step_size = 1.0;
+searching = TRUE;
+for(i = 0; i < n; i++) {
+    growing[i] = FALSE;
+}
+long counter = 0;
+/* Loop until the accuracy is achieved and *all* intervals are monotone */
+while((searching || (ns > 0))) {
+    printf("START searching = %d, ns = %ld\n", searching, ns);
+    //printf("counter = %ld\n", counter++);
+    /* Compute the step size for this iteration */
+    if(searching) {
+        step_size = step_size/2.0;
+        if(step_size < accuracy) {
+            printf("ACCURACY ACHIEVED\n");
+            searching = FALSE;
+            step_size = accuracy;
+            ng = 0;
+        }
+    }
+    /* Grow the step size (at a slower rate than the step size reduction
+        rate) if there are still intervals to fix */
+    else {
+        step_size = step_size * 1.5;
+    }
+
+    /* Grow all those first and second derivatives that were previously 
+        shrunk, and correspond to currently monotone spline pieces */
+
+    /* grow_values */
+    printf("ng = %ld\n", ng);
+    for(j = 0; j < ng; j++) {
+        i = to_grow[j];
+        /* Do not grow values that are actively related to a nonmonotone
+            spline segment */
+        if(shrinking[i]) {
+            printf("CONTINUE\n");
+            continue;
+        }
+        /* Otherwise, grow those values that have been modified 
+            previously */
+        fx[i] += step_size * fx_copy[i];
+        fxx[i] += step_size * fxx_copy[i];
+        /* Make sure the first derivative does not exceed its original 
+            value */
+        if((fx_copy[i] < 0.0) && (fx[i] < fx_copy[i])) {
+            fx[i] = fx_copy[i];
+        }
+        else if((fx_copy[i] > 0.0) && (fx[i] > fx_copy[i])) {
+            fx[i] = fx_copy[i];
+        }
+        /* Make sure the second derivative does not exceed its original 
+            value */
+        if((fxx_copy[i] < 0.0) && (fxx[i] < fxx_copy[i])) {
+            fxx[i] = fxx_copy[i];
+        }
+        else if((fxx_copy[i] > 0.0) && (fxx[i] > fxx_copy[i])) {
+            fxx[i] = fxx_copy[i];
+        }
+        /* Set this point and its neighboring intervals to be checked for
+            monotonicity. Use sequential if statements for 
+            short-circuiting */
+        if(i > 0) if(!(checking[i-1])) {
+            checking[i-1] = TRUE;
+            to_check[nc] = i-1;
+            nc++;
+        }
+        if(i < n-1) if(!checking[i]) {
+            checking[i] = TRUE;
+            to_check[nc] = i;
+            nc++;
+        }
+    }  /* grow_values */
+    
+    /* Shrink the first and second derivatives that cause 
+        nonmonotonicity */
+    /* shrink_values */
+    for(j = 0; j < ns; j++) {
+        i = to_shrink[j];
+        shrinking[i] = FALSE;
+        if(searching && (!growing[i])) {
+            growing[i] = TRUE;
+            to_grow[ng] = i;
+            ng++;
+        }
+        /* Shrink the values that are causing nonmonotonicity */
+        printf("SHRINKING\n");
+        fx[i] -= step_size * fx_copy[i];
+        fxx[i] -= step_size * fxx_copy[i];
+        if(i == 0) {
+            printf("fx[i] = %lf\n", fx[i]);
+        }
+        /* Make sure the first derivative does not pass zero */
+        if((fx_copy[i] < 0.0) && (fx[i] > 0.0)) {
+            fx[i] = 0.0;
+        }
+        else if((fx_copy[i] > 0.0) && (fx[i] < 0.0)) {
+            fx[i] = 0.0;
+        }
+        /* Make sure the second derivative does not pass zero */
+        if((fxx_copy[i] < 0.0) && (fxx[i] > 0.0)) {
+            fxx[i] = 0.0;
+        }
+        else if((fxx_copy[i] > 0.0) && (fxx[i] < 0.0)) {
+            fxx[i] = 0.0;
+        }
+        /* Set this point and its neighboring intervals to be checked for
+            monotonicity */
+        if(i > 0) {
+            if(!checking[i-1]) {
+                checking[i-1] = TRUE;
+                to_check[nc] = i-1;
+                nc++;
+            }
+        }
+        if(i < n-1) {
+            if(!checking[i]) {
+                checking[i] = TRUE;
+                to_check[nc] = i;
+                nc++;
+            }
+        }
+    }  /* shrink_values*/
+    /* Identify which spline segments are nonmonotone after the updates */
+    ns = 0;
+    printf("ns = %ld\n", ns);
+    printf("searching = %d\n", searching);
+    /* check_monotonicity */
+    for(j = 0; j < nc; j++) {
+        i = to_check[j];
+        checking[i] = FALSE;
+        printf("index %ld: ",i);
+        if(!is_monotone_index(i, h, f, fx, fxx)) {
+            if(!shrinking[i]) {
+                shrinking[i] = TRUE;
+                to_shrink[ns] = i;
+                ns++;
+            }
+            if(!shrinking[i+1]) {
+                shrinking[i+1] = TRUE;
+                to_shrink[ns] = i+1;
+                ns++;
+            }
+        }
+        else{
+            printf("end searching = %d, ns = %ld\n", searching, ns);
+        }
+    }  /* check_monotonicity */
+    nc = 0;
+    printf("END WHILE\n");
+    printf("%ld\n", counter++);
+}
 
 /* free memory */
 free(checking);
@@ -1008,6 +1254,8 @@ free(to_grow);
 free(to_shrink);
 free(flats);
 free(extrema);
+free(fx_copy);
+free(fxx_copy);
 
 return;
 
@@ -1015,22 +1263,136 @@ return;
 
 /*--------------------------------------------------------------------------*/
 
+void write_quintic_interpolant_to_file
+
+    (double h,      /* grid size */
+     double *f,     /* interpolated values */
+     double *fx,    /* first derivatives at interpolated points */
+     double *fxx,   /* second derivatives at interpolated points */
+     long   n)      /* number of interpolated points */
+
+{
+    long i, j;      /* loop variables */
+    long N;         /* number of samples in each interval */ 
+    double H;       /* x-distance between sampled values */
+    double *X;      /* sampled x-values */
+    double *Y;      /* sampled y-values */
+    double *coeff;  /* quintic coefficients of interpolant */
+    FILE *file1;    /* file to write interpolant data */
+    FILE *file2;    /* file to write interpolated points */
+
+    N = 100;
+    H = h / N;
+    file1 = fopen("interpolant.dat", "w");
+    X = malloc(sizeof(double) * (N - 1) * n);
+    Y = malloc(sizeof(double) * (N - 1) * n);
+    coeff = malloc(sizeof(double) * 6 * (n-1));
+        
+    quintic_hermite_coeffs(h, f, fx, fxx, coeff, n);
+    for (i = 0; i < n - 1; i++)
+    {
+        for (j = 0; j < N; j++)
+        {
+            X[i * N + j] = i * h + j * H;
+            Y[i * N + j] = eval_quintic_hermite_poly(j * 1.0 / N, coeff + 6 * i);
+        }
+    }
+
+    for (i = 0; i < N * (n - 1); i++)
+    {
+        fprintf(file1, "%lf %lf\n", X[i], Y[i]);
+    }
+    fclose(file1);
+
+    file2 = fopen("points.dat", "w");
+    for (i = 0; i < n; i++)
+    {
+        fprintf(file2, "%lf %lf\n", i * h, f[i]);
+    }
+    fclose(file2);
+    
+    free(X);
+    free(Y);
+    free(coeff);
+    return;
+
+}  /* write_quintic_interpolant_to_file */
+
+/*--------------------------------------------------------------------------*/
+
+void interpolate_image_row_to_file
+
+    (double  **u,
+     long    nx,
+     long    ny,
+     long    row)
+
+{
+    long i;
+    double h = 1.0;
+    double *f = malloc(sizeof(double)*nx);
+    double *fx = malloc(sizeof(double) * nx);
+    double *fxx = malloc(sizeof(double) * nx);
+    double *coeff = malloc(sizeof(double) * 6 * (nx - 1));
+
+    for(i = 1; i <= nx; i++) {
+        f[i-1] = u[i][row];    
+    }
+
+    mqsi(h, f, fx, fxx, nx, TRUE, TRUE);
+
+    for(i = 0; i < nx-1; i++) {
+        printf("i = %ld, nmax = %ld, row = %ld\n", i, nx-2, row);
+        if(!is_monotone_index(i, h, f, fx, fxx)) {
+            printf("NONMONOTONE AT INDEX %ld\n", i);
+            exit(1);
+        }
+    }
+
+    if(row == 35) {
+        write_quintic_interpolant_to_file(h, f, fx, fxx, nx);
+    }
+
+    free(f);
+    free(fx);
+    free(fxx);
+    free(coeff);
+
+    return;
+}
+
+/*--------------------------------------------------------------------------*/
+
 int main()
 {
-    long N = 100;
-    long n = 11;
-    long i, j;
-    double h = 1.0;
-    double H = h / N;
-    FILE *file;
 
+    long i, j;
+    long n = 11;
+    double h = 1.0;
+    
     double *f = malloc(sizeof(double) * n);
     double *fx = malloc(sizeof(double) * n);
     double *fxx = malloc(sizeof(double) * n);
     double *coeff = malloc(sizeof(double) * 6 * (n - 1));
 
-    double *X = malloc(sizeof(double) * (N - 1) * n);
-    double *Y = malloc(sizeof(double) * (N - 1) * n);
+    double  **u; 
+    char    in[80];               /* for reading data */
+    //char    out[80];              /* for reading data */
+
+    long    nx, ny;               /* image size in x, y direction */ 
+
+
+    printf ("input image (pgm):                         ");
+    read_string (in);
+
+    read_pgm_to_double (in, &nx, &ny, &u);
+    
+    //printf ("output image (pgm):                        ");
+    //read_string (out);
+
+    for(j = 1; j <= ny; j++) {
+        interpolate_image_row_to_file(u, nx, ny, j);
+    }
 
     /*
         f[0] = 1;
@@ -1059,17 +1421,18 @@ int main()
         f[9] = 60;
         f[10] = 85;
     */
-        f[0] = 10;
-        f[1] = 12;
-        f[2] = 10;
-        f[3] = 15;
-        f[4] = 10;
-        f[5] = 10;
-        f[6] = 10.5;
-        f[7] = 15;
-        f[8] = 50;
-        f[9] = 60;
-        f[10] = 85;
+
+        f[0] = 1;
+        f[1] = 2;
+        f[2] = 2.1;
+        f[3] = 5;
+        f[4] = 5.2;
+        f[5] = 6;
+        f[6] = 9;
+        f[7] = 10;
+        f[8] = 12;
+        f[9] = 12.1;
+        f[10] = 15;
 
 
 /*
@@ -1085,35 +1448,36 @@ int main()
 
     /* test call mqsi */
     //printf("%lf\n%lf\n%lf\n%lf\n", fx[0], fx[1], fxx[0], fxx[1]);    
-    mqsi(h, f, fx, fxx, n);
+    //mqsi(h, f, fx, fxx, n, TRUE, TRUE);
+
     //printf("%lf\n%lf\n%lf\n%lf\n", fx[0], fx[1], fxx[0], fxx[1]);
     //is_monotone_index(0, h, f, fx, fxx);
 
     //printf("%lf, %lf, %lf, %lf, %lf, %lf\n", f[5], f[6], fx[5], fx[6], fxx[5], fxx[6]);
 
 
-    for (i = 0; i < n - 1; i++)
-    {
-        if (!is_monotone(i * h, (i + 1) * h, f[i], f[i + 1], fx[i], fx[i + 1], fxx[i], fxx[i + 1]))
-        {
+    //for (i = 0; i < n - 1; i++)
+    //{
+      //  if (!is_monotone(i * h, (i + 1) * h, f[i], f[i + 1], fx[i], fx[i + 1], fxx[i], fxx[i + 1]))
+        //{
             // make_monotone(i*h, (i+1)*h, f[i], f[i+1], fx+i, fx+i+1, fxx+i, fxx+i+1);
-        }
-    }
-    quintic_hermite_coeffs(h, f, fx, fxx, coeff, n);
+        //}
+    //}
+    //quintic_hermite_coeffs(h, f, fx, fxx, coeff, n);
     //printf("%lf %lf %lf %lf %lf %lf\n", coeff[0], coeff[1], coeff[2], coeff[3], coeff[4], coeff[5]);
     //printf("%lf*x^5+%lf*x^4+%lf*x^3+%lf*x^2+%lf*x+%lf\n", coeff[6*5+0], coeff[6*5+1], coeff[6*5+2], coeff[6*5+3], coeff[6*5+4], coeff[6*5+5]);
 
 
-    for (i = 0; i < n - 1; i++)
+    /*for (i = 0; i < n - 1; i++)
     {
         for (j = 0; j < N; j++)
         {
             X[i * N + j] = i * h + j * H;
             Y[i * N + j] = eval_quintic_hermite_poly(j * 1.0 / N, coeff + 6 * i);
         }
-    }
+    }*/
 
-
+/*
     file = fopen("interpolant.dat", "w");
     for (i = 0; i < N * (n - 1); i++)
     {
@@ -1127,12 +1491,12 @@ int main()
         fprintf(file, "%lf %lf\n", i * h, f[i]);
     }
     fclose(file);
-
+*/
     free(f);
     free(fx);
     free(fxx);
     free(coeff);
-    free(X);
-    free(Y);
+    free_double_matrix (u, nx+2, ny+2);
+
     return 0;
 }
