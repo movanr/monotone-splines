@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <time.h>
+#include <unistd.h>
 
 
 /*--------------------------------------------------------------------------*/
@@ -1603,7 +1604,6 @@ for(i = 0; i < n; i++) {
 /*        derivative values by doing a quasi-bisection search                */
 /*---------------------------------------------------------------------------*/
 
-exit(1);
 /* Store the initially estimated first and second derivative values */
 for(i = 0; i < n; i++) {
     fx_copy[i] = fx[i];
@@ -2246,7 +2246,7 @@ for (i=1; i<=nx; i++)
 dummies_double (f, nx, ny);
 
 /* ---- interpolate image ---- */
-
+     
 interpolate_image (nx, ny, h, f, coeff_x, coeff_y, method); 
 
 /* ---- compute time savers ---- */
@@ -2328,9 +2328,9 @@ alloc_double_matrix (&coeff_x, ny+2, (nx+2-1) * p);
 
 /* ---- loop ---- */
 for (k=1; k<=kmax; k++) {
-   printf ("iteration:   %ld / %ld \r", k, kmax);
+   printf ("iteration:   %ld / %ld \n", k, kmax);
    mcm_step (tau, nx, ny, h, u, coeff_x, coeff_y, method);
-   }  
+}  
    
 /* ---- free memory ---- */
 free_double_matrix (coeff_x, ny+2, (nx+2-1) * p);
@@ -2341,58 +2341,111 @@ return;
 }  /* mcm */
 
 /*--------------------------------------------------------------------------*/
-/*                           MAIN MENU                                      */
+/*                 TESTING/EVALUATION FUNCTIONS                             */
 /*--------------------------------------------------------------------------*/
 
-int main ()
+void generate_disk_image
+
+   (long    nx,      /* image dimension in x direction */
+    long    ny,      /* image dimension in y direction */
+    double  sigma,   /* radius of the disk */
+    double  **u)     /* image, ouput */
+
+/*
+   generate disk shaped image of size nx*ny
+*/ 
+ 
+{
+long i, j;       /* loop variables */
+double mx, my;   /* middle point coordinates */
+
+/* initialize middle point coordinates */
+mx = (double)(nx+1) / 2.0;
+my = (double)(ny+1) / 2.0;
+
+/* set image values to zero */
+for(i = 0; i < nx+2; i++) {
+   for(j = 0; j < ny+2; j++) {
+      u[i][j] = 0.0;
+      if((mx-i)*(mx-i) + (my-j)*(my-j) <= sigma * sigma) {
+         u[i][j] = 255.0;
+      }
+   }
+}  
+
+return;  
+
+}  /* generate_disk_image */
+
+/*--------------------------------------------------------------------------*/
+
+void diff_image
+
+   (long    nx,   /* image dimension in x direction */
+    long    ny,   /* image dimension in y direction */
+    double  **u,  /* first image */
+    double  **v,  /* second image */
+    double  **w)  /* absolute difference of the images, output */
+
+/*
+   absolute difference of u and v, stored in w;
+*/
 
 {
-long    i;                    /* loop variable */
-char    in[80];               /* for reading data */
-char    out[80];              /* for reading data */
-double  **u;                  /* image */
-long    nx, ny;               /* image size in x, y direction */ 
-double  tau;                  /* time step size */
-long    kmax;                 /* number of iterations */
-long    method;               /* method parameter */
-double  h;                    /* pixel size in x and y direction */
-double  max, min;             /* largest, smallest grey value */
-double  mean;                 /* average grey value */
-double  std;                  /* standard deviation */
-char    comments[1600];       /* string for comments */
-char    divider[81];          /* string for list divider */
+   long i, j;     /* loop variables */
+   for(i = 0; i < nx+2; i++) {
+      for(j = 0; j < ny+2; j++) {
+         w[i][j] =  fabs(u[i][j] - v[i][j]);
+      }
+   }
+   
+   return; 
+   
+}  /* diff_image */
 
-/* method descriptions */
-char description[5][80] = {
-   "Linear Spline", 
-   "Cubic Spline", 
-   "Fritsch-Carlson (1980)", 
-   "Extended Two-Sweep (Eisenstat 1985)", 
-   "MQSI (Lux 2020)"
-};
+/*--------------------------------------------------------------------------*/
 
-printf("\nMEAN CURVATURE MOTION FOR GREYSCALE (PGM) IMAGES\n");
-printf("EXPLICIT SCHEMES WITH (MONOTONE) SPLINE INTERPOLATION\n\n");
-printf ("**************************************************\n\n");
-printf ("    Bachelor studies by Moritz van Recum (2023)   \n\n");
-printf ("    Supervisor: Joachim Weickert                  \n\n");
-printf ("    Copyright 2021 by Joachim Weickert            \n");
-printf ("    Dept. of Mathematics and Computer Science     \n");
-printf ("    Saarland University, Saarbruecken, Germany    \n\n");
-printf ("    All rights reserved. Unauthorised usage,      \n");
-printf ("    copying, hiring, and selling prohibited.      \n\n");
-printf ("**************************************************\n\n");
+void disk_shrinkage
 
+     (double   tau,       /* time step size */
+      long     nx,        /* image dimension in x direction */
+      long     ny,        /* image dimension in y direction */
+      double   h,         /* pixel size in x and y direction */
+      double   **u,       /* image, changed */
+      double   sigma)     /* radius of the disk */
+/*
+   iterative explicit scheme for MCM with interpolation;
+*/
+   
+{
+long     i, j;            /* loop variables */
+double   **v              /* copy of the image u */;
+double   **coeff_x;       /* hermite coefficients in x direction */
+double   **coeff_y;       /* hermite coefficients in y direction */
+double   **coeff_quint_x; /* hermite quintic coefficients in x direction */
+double   **coeff_quint_y; /* hermite quintic coefficients in y direction */
+double   max, min;        /* largest, smallest grey value */
+double   mean;            /* average grey value */
+double   std;             /* standard deviation */
+double   eps;             /* small constant */
+long     method;          /* interpolation method parameter */
+char     divider[81];     /* string for list divider */
+long     k[6];            /* iteration indices for different methods */
 
-/* ---- read input image (pgm format P5) ---- */
+/* ---- allocate memory ---- */
+alloc_double_matrix (&v, nx+2, ny+2);
+alloc_double_matrix (&coeff_y, nx+2, (ny+2-1) * 4);
+alloc_double_matrix (&coeff_x, ny+2, (nx+2-1) * 4);
 
-printf ("input image (pgm):                         ");
-read_string (in);
+alloc_double_matrix (&coeff_quint_y, nx+2, (ny+2-1) * 6);
+alloc_double_matrix (&coeff_quint_x, ny+2, (nx+2-1) * 6);
 
-read_pgm_to_double (in, &nx, &ny, &u);
-printf ("\n");
-
-/* ---- read parameters ---- */
+/* copy the image u to v */
+for(i = 0; i < nx+2; i++) {
+   for(j = 0; j < nx+2; j++) {
+      v[i][j] = u[i][j];
+   }
+}
 
 /* initialize list divider */
 for(i = 0; i < 80; i++) {
@@ -2400,7 +2453,125 @@ for(i = 0; i < 80; i++) {
 }
 divider[80] = '\0';
 
-/* print interpolation methods table */
+/* initialize eps */
+eps = 0.499;
+
+/* ---- loop through interpolation methods ---- */
+
+for(i = 1; i < 6; i++) {
+   k[i] = i*1000;
+}
+
+for(method = 1; method <= 5; method++) {
+   /* get a fresh copy of the original image */
+   for(i = 0; i < nx+2; i++) {
+      for(j = 0; j < nx+2; j++) {
+         u[i][j] = v[i][j];
+      }
+   }
+   /* initialize maximal grey value */
+   max = 255.0;
+   k[method] = 0;
+   while(max > eps) {
+      k[method]++;
+      printf("t = %lf\n", k[method]*tau*h);
+      if(k[method]*tau > 5*sigma * sigma * h * h) {
+         /* factor 10 above theoretical extiction time, abort */
+         printf(
+            "theoretical extiction time: %5.3lf\n",
+            0.5 * sigma * sigma * h * h
+         );
+         printf("exceeded extinction time by factor 10, aborting\n");
+         break;
+      }
+      analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
+      if (method != 5) {
+         mcm_step (tau, nx, ny, h, u, coeff_x, coeff_y, method);
+      }
+      else if (method == 5) {
+         mcm_step (tau, nx, ny, h, u, coeff_quint_x, coeff_quint_y, method);
+      }
+   }
+}
+
+printf("\n");
+printf("%s\n", divider);
+printf("Disk Shrinkage with Explicit MCM Scheme\n");
+printf("disk radius = %lf px\n", sigma);
+printf("time step size tau = %5.3lf\n", tau);
+printf("pixel size h = %lf\n", h);
+printf(
+   "analytical extinction time t = %5.3lf\n", 
+   0.5 * sigma * sigma * h * h
+);
+printf("%s\n", divider);
+printf("method                                    ");
+printf("t_ext          error (%%)\n");        
+printf(
+   "Analytic solution                         %5.3lf\n", 
+   0.5 * sigma * sigma * h * h
+);             
+printf(
+   "Linear Spline                             %5.3lf       %5.3lf\n", 
+   k[1] * tau * h, 
+   100.0*(fabs((0.5*sigma*sigma*h*h) - k[1]*tau*h)) / (0.5*sigma*sigma*h*h)
+);
+printf(
+   "Cubic Spline                              %5.3lf       %5.3lf\n",
+   k[2] * tau * h, 
+   100.0*(fabs((0.5*sigma*sigma*h*h) - k[2]*tau*h)) / (0.5*sigma*sigma*h*h)
+);
+printf(
+   "Fritsch-Carlson (1980)                    %5.3lf       %5.3lf\n",
+   k[3] * tau * h, 
+   100.0*(fabs((0.5*sigma*sigma*h*h) - k[3]*tau*h)) / (0.5*sigma*sigma*h*h)
+);
+printf(
+   "Extended Two-Sweep (Eisenstat 1985)       %5.3lf       %5.3lf\n",
+   k[4] * tau * h, 
+   100.0*(fabs((0.5*sigma*sigma*h*h) - k[4]*tau*h)) / (0.5*sigma*sigma*h*h)
+);
+printf(
+   "MQSI (Lux 2020)                           %5.3lf       %5.3lf\n",
+   k[5] * tau * h, 
+   100.0*(fabs((0.5*sigma*sigma*h*h) - k[5]*tau*h)) / (0.5*sigma*sigma*h*h)
+);
+printf("%s\n", divider);
+
+/* ---- free memory ---- */
+free_double_matrix (v, nx+2, ny+2);
+
+free_double_matrix (coeff_x, ny+2, (nx+2-1) * 4);
+free_double_matrix (coeff_y, nx+2, (ny+2-1) * 4);
+
+free_double_matrix (coeff_quint_x, ny+2, (nx+2-1) * 6);
+free_double_matrix (coeff_quint_y, nx+2, (ny+2-1) * 6);
+
+return;
+
+}  /* disk_shrinkage */
+
+/*--------------------------------------------------------------------------*/
+/*                           MAIN MENU FUNCTIONS                            */
+/*--------------------------------------------------------------------------*/
+
+void print_interpolation_methods() 
+
+/*
+   print interpolation methods table 
+*/ 
+
+{
+int i;              /* loop variable */
+char divider[81];   /* string for list divider */
+
+/* initialize list divider */
+for(i = 0; i < 80; i++) {
+   divider[i] = '-';
+}
+divider[80] = '\0';
+
+/* print table */
 printf("%s\n", divider);
 printf("interpolation method                    ");
 printf("monotone  order of   spline   smoothness\n");
@@ -2423,80 +2594,265 @@ printf("5: MQSI (Lux 2020)                      ");
 printf("yes       3          5        2\n");
 printf("%s\n", divider);
 
-/* read interpolation method */
-printf ("\n");
-printf ("interpolation method (1-5):                ");
-read_long (&method);
+return;
 
-/* read time step size */
-printf ("time step size tau (<0.500):               ");
-read_double (&tau);
+}  /* print_interpolation_methods */
 
-/* read number of iterations */
-printf ("number of iterations (>0):                 ");
-read_long (&kmax);
+/*--------------------------------------------------------------------------*/
 
-/* read output file name */
-printf ("output image (pgm):                        ");
-read_string (out);
+int main (int argc, char* argv[])
 
-printf ("\n");
+{
+double  **u;                  /* image */
+long    nx, ny;               /* image size in x, y direction */ 
+double  h;                    /* pixel size in x and y direction */
+double  max, min;             /* largest, smallest grey value */
+double  mean;                 /* average grey value */
+double  std;                  /* standard deviation */
+char    comments[1600];       /* string for comments */
 
 
-/* ---- analyse initial image ---- */
+/* main menu parameters */
+char    in[80];               /* for reading data */
+char    out[80];              /* for reading data */
+double  tau;                  /* time step size */
+long    kmax;                 /* number of iterations */
+long    method;               /* inteprolation method parameter */
 
-analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
-printf ("initial image\n");
-printf ("minimum:          %8.2lf \n", min);
-printf ("maximum:          %8.2lf \n", max);
-printf ("mean:             %8.2lf \n", mean);
-printf ("standard dev.:    %8.2lf \n\n", std);
+/* testing menu parameters (testing mode) */
+long    test_method;           /* test method parameter */
+double  sigma;                 /* raduis of disk */
+
+/* method descriptions */
+char description[5][80] = {
+   "Linear Spline", 
+   "Cubic Spline", 
+   "Fritsch-Carlson (1980)", 
+   "Extended Two-Sweep (Eisenstat 1985)", 
+   "MQSI (Lux 2020)"
+};
+
+/* parsing arguments */
+int c;            /* variable for character arguments */
+int tflag = 0;    /* flag for argment 't' for testing */
+//int index;        /* index variable for looping through arguments */
+
+opterr = 0;
+
+while((c = getopt (argc, argv, "t")) != -1) {
+   switch(c) {
+   case 't':
+      tflag = 1;
+      break;
+   case '?':
+      if (isprint (optopt)) {
+         fprintf (stderr, "Unknown option `-%c'.\n", optopt);
+      }
+      else {
+         fprintf (stderr, "Unknown option character `\\x%x'.\n", optopt);
+      }
+      return 1;
+   default:
+      abort ();
+   }
+}
+
+printf("\nMEAN CURVATURE MOTION FOR GREYSCALE (PGM) IMAGES\n");
+printf("EXPLICIT SCHEMES WITH (MONOTONE) SPLINE INTERPOLATION\n\n");
+printf ("**************************************************\n\n");
+printf ("    Bachelor studies by Moritz van Recum (2023)   \n\n");
+printf ("    Supervisor: Joachim Weickert                  \n\n");
+printf ("    Copyright 2021 by Joachim Weickert            \n");
+printf ("    Dept. of Mathematics and Computer Science     \n");
+printf ("    Saarland University, Saarbruecken, Germany    \n\n");
+printf ("    All rights reserved. Unauthorised usage,      \n");
+printf ("    copying, hiring, and selling prohibited.      \n\n");
+printf ("**************************************************\n\n");
+
+/* initialize pixel size h */
+h = 2.0;
+
+/* testing/evaluation mode */
+if(tflag) {
+   printf("TESTING/EVALUATION\n\n");
+   printf("1: disk shrinkage\n");
+   printf("2: generate disk image\n");
+   printf("\n");
+   printf("test method number:                        ");
+   
+   /* read test method parameter */
+   read_long(&test_method);
+   printf("\n");
+  
+   switch(test_method) {
+   case 1:
+      /* --------------------------------------------------*/
+      /*                 disk shrinkage                    */
+      
+      /* -- read input image (pgm format P5) -- */
+      printf ("input image (pgm):                         ");
+      read_string (in);
+      read_pgm_to_double (in, &nx, &ny, &u); 
+      
+      /* read disk radius */
+      printf("disk radius:                               ");
+      read_double (&sigma);
+      
+      /* read time step size */
+      printf ("time step size tau (<%5.3lf):               ", 1.0/2.0*h);
+      read_double (&tau);
+      
+      disk_shrinkage (tau, nx, nx, h, u, sigma);
+      
+      /* ---- free memory ---- */
+      free_double_matrix (u, nx+2, ny+2);
+      
+      break; 
+      /* --------------------------------------------------*/
+      
+   case 2:
+      /* --------------------------------------------------*/
+      /*          generate disk shaped image               */
+      
+      /* read disk radius */
+      printf("disk radius:                               ");
+      read_double (&sigma);
+      
+      /* read image dimensions */
+      printf("image dimensions (nx=ny)                   ");
+      read_long(&nx);
+      ny = nx;
+      
+      /* read output file name */
+      printf ("output image (pgm):                        ");
+      read_string (out);
+      
+      /* allocate memory */
+      alloc_double_matrix (&u, nx+2, ny+2);
+      
+      /* generate image of size nx*ny with disk of radius sigma */
+      generate_disk_image (nx, ny, sigma, u);
+      
+      /* ---- write output image (pgm format) ---- */
+
+      /* write parameter values in comment string */
+      comments[0] = '\0';
+      comment_line (comments, "# disk\n");
+      comment_line (comments, "# radius: %5.3lf\n", sigma); 
+      
+      
+
+      /* write image */
+      write_double_to_pgm (u, nx, ny, out, comments);
+      printf ("output image %s successfully written\n\n", out);
+     
+      /* free memory */
+      free_double_matrix (u, nx+2, ny+2);
+      
+      break;
+      /* --------------------------------------------------*/
+      
+   default: 
+      printf("invalid test method number, aborting\n"); 
+      exit(1);
+      /* --------------------------------------------------*/
+   }
+}
 
 
-/* ---- process image ---- */
+else {
+   /* --------------------------------------------------*/
+   /*                 main program                      */
+   
+   /* -- read input image (pgm format P5) -- */
+   printf ("input image (pgm):                         ");
+   read_string (in);
 
-/* initialize h */
-h = 1.0;
+   read_pgm_to_double (in, &nx, &ny, &u);
+   printf ("\n");
 
-/* reflecting dummy boundaries */
+   /* print interpolation methods table */
+   print_interpolation_methods();
 
-dummies_double (u, nx, ny);
+   /* ---- read parameters ---- */
+   /* read interpolation method */
+   printf ("\n");
+   printf ("interpolation method (1-5):                ");
+   read_long (&method);
 
-/* process image */
-mcm(tau, kmax, nx, ny, h, u, method);
+   /* read time step size */
+   printf ("time step size tau (<%5.3lf):               ", 1.0/2.0*h);
+   read_double (&tau);
 
-/* analyse processed image */   
-analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
-printf ("\n\nprocessed image:\n");
-printf ("minimum:          %8.2lf \n", min);
-printf ("maximum:          %8.2lf \n", max);
-printf ("mean:             %8.2lf \n", mean);
-printf ("standard dev.:    %8.2lf \n\n", std);
+   /* read number of iterations */
+   printf ("number of iterations (>0):                 ");
+   read_long (&kmax);
 
+   /* read output file name */
+   printf ("output image (pgm):                        ");
+   read_string (out);
 
-/* ---- write output image (pgm format) ---- */
-
-/* write parameter values in comment string */
-comments[0] = '\0';
-comment_line (comments, "# MCM, explicit scheme with spline interpolation\n");
-comment_line (comments, "# initial image:        %s\n", in);
-comment_line (comments, "# interpolation method: %s\n", description[method-1]);
-comment_line (comments, "# tau:       %8.2lf\n", tau);
-comment_line (comments, "# kmax:      %8ld\n", kmax);
-comment_line (comments, "# min:       %8.2lf\n", min);
-comment_line (comments, "# max:       %8.2lf\n", max);
-comment_line (comments, "# mean:      %8.2lf\n", mean);
-comment_line (comments, "# st. dev.:  %8.2lf\n", std);
+   printf ("\n");
 
 
-/* write image */
-write_double_to_pgm (u, nx, ny, out, comments);
-printf ("output image %s successfully written\n\n", out);
+   /* ---- analyse initial image ---- */
 
-/* ---- free memory ---- */
+   analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
+   printf ("initial image\n");
+   printf ("minimum:          %8.2lf \n", min);
+   printf ("maximum:          %8.2lf \n", max);
+   printf ("mean:             %8.2lf \n", mean);
+   printf ("standard dev.:    %8.2lf \n\n", std);
 
-free_double_matrix (u, nx+2, ny+2);
 
-return(0);
+   /* ---- process image ---- */
 
+   /* reflecting dummy boundaries */
+
+   dummies_double (u, nx, ny);
+
+   /* process image */
+   mcm(tau, kmax, nx, ny, h, u, method);
+
+   /* analyse processed image */   
+   analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
+   printf ("\n\nprocessed image:\n");
+   printf ("minimum:          %8.2lf \n", min);
+   printf ("maximum:          %8.2lf \n", max);
+   printf ("mean:             %8.2lf \n", mean);
+   printf ("standard dev.:    %8.2lf \n\n", std);
+
+
+   /* ---- write output image (pgm format) ---- */
+
+   /* write parameter values in comment string */
+   comments[0] = '\0';
+   comment_line (comments, "# MCM, explicit scheme with spline interpolation\n");
+   comment_line (comments, "# initial image:        %s\n", in);
+   comment_line (comments, "# interpolation method: %s\n", description[method-1]);
+   comment_line (comments, "# tau:       %8.2lf\n", tau);
+   comment_line (comments, "# kmax:      %8ld\n", kmax);
+   comment_line (comments, "# min:       %8.2lf\n", min);
+   comment_line (comments, "# max:       %8.2lf\n", max);
+   comment_line (comments, "# mean:      %8.2lf\n", mean);
+   comment_line (comments, "# st. dev.:  %8.2lf\n", std);
+
+
+   /* write image */
+   write_double_to_pgm (u, nx, ny, out, comments);
+   printf ("output image %s successfully written\n\n", out);
+
+   /* ---- free memory ---- */
+   free_double_matrix (u, nx+2, ny+2);
+
+   return(0);
+
+   }
+   
 }  /* main */
+
+
+
+
+
+
