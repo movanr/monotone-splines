@@ -20,11 +20,11 @@
 /*            (Copyright by Joachim Weickert, 11/2021)                      */
 /*--------------------------------------------------------------------------*/
 
-
-#define EPS 1e-14          /* small constant */
+#define EPS 1e-14         
 #define FALSE 0
 #define TRUE 1
-
+#define PI 3.14159
+#define SAMPLE_RATE 100
 
 /*--------------------------------------------------------------------------*/
 
@@ -522,7 +522,7 @@ double eval_cubic_hermite_poly
 
 /*
    evaluates a hermite polynomial at point z  
-   (coeff[i][3] + coeff[i][2] z + coeff[i][1] z² + coeff[i][0] z³)
+   (coeff[i][3] + coeff[i][2] z + coeff[i][1] z^2 + coeff[i][0] z^3)
 */
 
 {
@@ -532,24 +532,82 @@ return ((coeff[0] * z + coeff[1]) * z + coeff[2]) * z + coeff[3];
          
 }  /* eval_cubic_hermite_poly */
 
+/*--------------------------------------------------------------------------*/
+
+double eval_quintic_hermite_poly
+
+    (double z,      /* evaluation point (in [0,1])*/
+     double *coeff) /* coefficients of size 6 */
+
+/*
+   evaluates a hermite polynomial at point z
+   (coeff[i][5] + coeff[i][4] z + coeff[i][3] z^2 + coeff[i][2] z^3 + ...)
+*/
+
+{
+
+    /* evaluation at z using Horner's method */
+    return ((((coeff[0] * z + coeff[1]) * z + coeff[2]) * z 
+            + coeff[3]) * z + coeff[4]) * z + coeff[5];
+
+} /* eval_quintic_hermite_poly */
+
+/*--------------------------------------------------------------------------*/
+
+double eval_piecewise_poly
+
+   (double z,              /* evaluation point */
+    double *coeff,         /* coefficients of size (n-1) * 4 */
+    long   p,              /* spline order */ 
+    long   n)              /* number of breakpoints */
+    
+/*
+   evaluates a piecewise polynomial at point z in the i-th interval 
+   (is given by c[i+0] + c[i+1] (z-i) + c[i+2] (z-i)^2 + c[i+3] (z-i)^3...
+   * equidistant version (h=1) *
+*/
+
+{
+long i; /* indices */             
+/* first compute interval index i for z */
+/* left boundary */
+if (z < 1)
+   i = 0;
+/* right boundary */
+else if (z >= n-2)
+   i = n-2;
+/* z lies between 1 and n-2 */
+i = (long)z;
+   
+/* evaluation at z-i in the i-th interval */
+if(p == 4) {
+   return eval_cubic_hermite_poly(z-i, coeff+(i*p));
+}
+else if(p == 6) {
+   return eval_quintic_hermite_poly(z-i, coeff+(i*p));
+}
+
+printf("eval_piecewise_poly: invalid spline order: %ld\n", p);
+printf("aborting\n");
+exit(1);
+
+}  /* eval_piecewise_poly */
+
 /*-------------------------------------------------------------------------*/
 
 void hermite_coeffs
 
-   (double  h,          /* interval length */
-    double  *Y,         /* breakpoint values */
+   (double  *Y,         /* breakpoint values */
     double  *d,         /* breakpoint approximated derivatives */
     double  *coeff,     /* coefficient vector of size (n-1)*4 */
     long    n)          /* number of breakpoints */
     
 /*
    calculates coefficients of the piecewise cubic hermite for each interval
-   and stores them in the coefficient matrix;
+   and stores them in the coefficient vector;
    uses the standard basis {x^3, x^2, x, 1};
    the polynomials for each interval all have the domain [0,1]
-   derivative values d_i are implicitly mapped to h*d_i due to the 
-   mapping of the intervals to [0,1] and the chain rule
-   * equidistant version *
+   * equidistant version (h=1) *
 */  
 
 {
@@ -557,9 +615,13 @@ long  i;    /* loop variable */
 
 for (i=0; i<n-1; i++)
    {
-   coeff[4*i] = 2*Y[i] + h*d[i] - 2*Y[i+1] + h*d[i+1];
-   coeff[4*i+1] = -3*Y[i] + 3*Y[i+1] - 2*h*d[i] - h*d[i+1];
-   coeff[4*i+2] = h*d[i];
+   /* coefficient for x^3 */
+   coeff[4*i] = 2*Y[i] + d[i] - 2*Y[i+1] + d[i+1];   
+   /* coefficient for x^2 */
+   coeff[4*i+1] = -3*Y[i] + 3*Y[i+1] - 2*d[i] - d[i+1];
+   /* coefficient for x^1 */
+   coeff[4*i+2] = d[i];
+   /* coefficient for x^0 */
    coeff[4*i+3] = Y[i];
    }
 
@@ -589,11 +651,10 @@ long  i; /* loop variable */
 c[0] = c[0]/b[0];
 d[0] = d[0]/b[0];
 
-for (i=1; i<n-1; i++) 
-   {
+for (i=1; i<n-1; i++) {
    c[i] = c[i]/(b[i]-c[i-1]*a[i]);
    d[i] = (d[i]-d[i-1]*a[i])/(b[i]-c[i-1]*a[i]);
-   }
+}
 d[n-1] = (d[n-1]-d[n-2]*a[n-1])/(b[n-1]-c[n-2]*a[n-1]);
 
 /* back substitution */
@@ -609,15 +670,14 @@ return;
 
 void cubic_spline_derivs_eq
 
-   (double  h,          /* interval length */ 
-    double  *Y,         /* breakpoint values */      
+   (double  *Y,         /* breakpoint values */      
     double  *s,         /* slopes (output) */
     long    n)          /* number of breakpoints */
 
 
 /*
-   calculates derivatives of the cubic C²-spline
-   * equidistant version *
+   calculates derivatives of the cubic C^2-spline
+   * equidistant version (h=1) *
 */
 
 {
@@ -636,17 +696,17 @@ alloc_double_vector(&d, n);
 
 b[0] = 2;
 c[0] = 4;
-d[0] = (4*Y[1] - 5*Y[0] + Y[2])/h;
+d[0] = (4*Y[1] - 5*Y[0] + Y[2]);
 for (i=1; i<n-1; i++)   
    {        
    a[i] = 1;
    b[i] = 4;
    c[i] = 1;
-   d[i] = 3.0*(Y[i+1] - Y[i-1])/h;
+   d[i] = 3.0*(Y[i+1] - Y[i-1]);
    }
 a[n-1] = -4;
 b[n-1] = -2;
-d[n-1] = (4*Y[n-2] + Y[n-3] - 5*Y[n-1])/h;
+d[n-1] = (4*Y[n-2] + Y[n-3] - 5*Y[n-1]);
 
 
 /* solve tridiagonal system */
@@ -663,14 +723,100 @@ return;
 
 }  /* cubic_spline_derivs_eq */
 
+
+/*--------------------------------------------------------------------------*/
+
+void cubic_spline_derivs_zero_bc
+
+    (double *f,  /* breakpoint values */
+     double *fx, /* approximated derivatives (output) */
+     long n)     /* number of breakpoints */
+
+/*
+   calculates derivatives of the cubic C²-spline
+   * equidistant version *
+*/
+
+{
+    long i;            /* loop variable */
+    double *d;         /* right side of the tridiagonal system */
+    double *a, *b, *c; /* diagonal entries of the tridiagonal system */
+
+    /* allocate memory */
+    a = malloc(sizeof(double) * n);
+    b = malloc(sizeof(double) * n);
+    c = malloc(sizeof(double) * n - 1);
+    d = malloc(sizeof(double) * n);
+
+    /* calculate entries of the tridiagonal system */
+    /* ("zero" boundary conditions) */
+
+    b[0] = 1;
+    c[0] = 0;
+    d[0] = 0;
+    for (i = 1; i < n - 1; i++)
+    {
+        a[i] = 1;
+        b[i] = 4;
+        c[i] = 1;
+        d[i] = 3.0 * (f[i + 1] - f[i - 1]);
+    }
+    a[n - 1] = 0;
+    b[n - 1] = 1;
+    d[n - 1] = 0;
+
+    /* solve tridiagonal system */
+    tridiagonal_matrix_algorithm(fx, a, b, c, d, n);
+
+    /* free variables */
+    free(a);
+    free(b);
+    free(c);
+    free(d);
+
+    return;
+
+} /* cubic_spline_derivs_zero_bc */
+
+/*--------------------------------------------------------------------------*/
+
+void cubic_spline_second_derivs
+
+    (double *f,   /* breakpoint values */
+     double *fx,  /* cubic spline derivatives (input) */
+     double *fxx, /* cubic spline second derivatives (output) */
+     long n)      /* number of breakpoints */
+
+/*
+   calculates second derivatives of the cubic C²-spline.
+   First calculate the cubic spline derivatives and then call this function
+   to obtain the second derivatives
+   * equidistant version *
+*/
+
+{
+    long i; /* loop variable */
+
+    /* coefficients a_0[i] and a_1[i] are expressed in terms of f and fx */
+    /* second derivative is given by 2a_1[i] where a_1[i] is the coefficient
+       of x^2 in the standard basis {x^3, x^2, x, 1};*/
+    for (i = 0; i < n - 1; i++)
+    {
+        fxx[i] = 2 * (-3 * f[i] + 3 * f[i + 1] - 2 * fx[i] - fx[i + 1]);
+    }
+    /* the last derivative is given by 6*a_0[n-2] + 2a_1[n-2]; */
+    fxx[n - 1] = 6 * (2 * f[n - 2] + fx[n - 2] - 2 * f[n - 1] 
+        + fx[n - 1]) + 2 * (-3 * f[n - 2] + 3 * f[n - 1] 
+        - 2 * fx[n - 2] -  fx[n - 1]);
+
+    return;
+
+} /* cubic_spline_second_derivs */
+
 /*--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------*/
 /*             functions for cubic monotonicity constraints                 */
-/*                                                                          */
-/*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
 /*             order 3 accurate monotone cubic interpolation                */
 /*--------------------------------------------------------------------------*/
 
@@ -687,7 +833,6 @@ void modify_slopes_basic
    The values d[i] are modified such that (d[i], d[i+1])
    lies in S2*delta[i] by projecting them in a straight line to the origin
    onto S2*delta[i].
-  
 */
 
 {
@@ -771,9 +916,6 @@ return;
 
 /*--------------------------------------------------------------------------*/
 /*             order 4 accurate monotone cubic interpolation                */
-/*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
 /*                 functions for ext. two-sweep method                      */
 /*--------------------------------------------------------------------------*/
 
@@ -930,12 +1072,17 @@ void extended_forward_sweep
     long    n)       /* length */
 
 /*
+   Implementation of the adapted verion of the extended forward sweep function
+   by Eisenstat et al (1985): 
+   "The Order Of monotone Piecewise Cubic Interpolation"
+   SIAM Journal on Numerical Analysis
+
    extended forward sweep function 
-      modifies the slopes (d[i],d[i+1]); projects them onto the union of 
-      delta[i]*M and delta[i]*D for i = 0 ,..., n-2;
-      only modifies d[i+1] in each iteration except for region A;
-      increases or decreases them accordingly onto the boundary of the union 
-      of M and D 
+   modifies the slopes (d[i],d[i+1]); projects them onto the union of 
+   delta[i]*M and delta[i]*D for i = 0 ,..., n-2;
+   only modifies d[i+1] in each iteration except for region A;
+   increases or decreases them accordingly onto the boundary of the union 
+   of M and D 
 */
     
 {
@@ -1024,7 +1171,12 @@ void extended_backward_sweep
     double  *delta,        /* secant lines, length n-1 */
     long    n)             /* length */
 /*
-   extended backward sweep function 
+     Implementation of the adapted verion of the extended backward sweep function
+     by Eisenstat et al (1985): 
+     "The Order Of monotone Piecewise Cubic Interpolation"
+     SIAM Journal on Numerical Analysis
+
+     extended backward sweep function 
      modifies the slopes (d[i],d[i+1]); projects them onto delta[i]*M 
      for i = n-2 ,..., 0;
      only modifies d[i] in each iteration except for region E;
@@ -1097,30 +1249,12 @@ return;
 /*        functions for piecewise quintic hermite interpolation             */
 /*--------------------------------------------------------------------------*/
 
-double eval_quintic_hermite_poly
-
-    (double z,      /* evaluation point (in [0,1])*/
-     double *coeff) /* coefficients of size 6 */
-
-/*
-   evaluates a hermite polynomial at point z
-   (coeff[i][5] + coeff[i][4] z + coeff[i][3] z² + coeff[i][2] z³ + ...)
-*/
-
-{
-
-    /* evaluation at z using Horner's method */
-    return ((((coeff[0] * z + coeff[1]) * z + coeff[2]) * z 
-            + coeff[3]) * z + coeff[4]) * z + coeff[5];
-
-} /* eval_quintic_hermite_poly */
 
 /*--------------------------------------------------------------------------*/
 
 void quintic_hermite_coeffs
 
-    (double h,      /* interval length */
-     double *f,     /* breakpoint values */
+    (double *f,     /* breakpoint values */
      double *fx,    /* breakpoint approximated first derivatives */
      double *fxx,   /* breakpoint approximated second derivatives */
      double *coeff, /* coefficient vector of size (n-1)*6 (output) */
@@ -1130,11 +1264,7 @@ void quintic_hermite_coeffs
     calculates coefficients of the piecewise quintic hermite for each interval
     and stores them in the coefficient matrix;
     the polynomials for each interval all have the domain [0,1]
-    first derivative values d_i are implicitly mapped to h*d_i due to the
-    mapping of the intervals to [0,1] and the chain rule
-    second derivative values d_i are implicitly mapped to h^2*d_i due to the
-    mapping of the intervals to [0,1] and the chain rule
-    *equidistand version*
+    *equidistand version (h=1) *
 */
 
 {
@@ -1144,17 +1274,17 @@ void quintic_hermite_coeffs
     for (i = 0; i < n - 1; i++)
     {
         coeff[6 * i] =
-            -6.0 * f[i] - 3.0 * h * fx[i] - 0.5 * h * h * fxx[i] 
-            + 0.5 * h * h * fxx[i + 1] - 3.0 * h * fx[i + 1] 
+            -6.0 * f[i] - 3.0  * fx[i] - 0.5 * fxx[i] 
+            + 0.5 * fxx[i + 1] - 3.0 * fx[i + 1] 
             + 6.0 * f[i + 1];
         coeff[6 * i + 1] =
-            +15.0 * f[i] + 8.0 * h * fx[i] + 3.0 / 2 * h * h * fxx[i] 
-            - 1.0 * h * h * fxx[i + 1] + 7.0 * h * fx[i + 1] - 15 * f[i + 1];
+            +15.0 * f[i] + 8.0 * fx[i] + 3.0 / 2 * fxx[i] 
+            - 1.0 * fxx[i + 1] + 7.0  * fx[i + 1] - 15 * f[i + 1];
         coeff[6 * i + 2] =
-            -10.0 * f[i] - 6.0 * h * fx[i] - 3.0 / 2 * h * h * fxx[i] 
-            + 0.5 * h * h * fxx[i + 1] - 4.0 * h * fx[i + 1] + 10.0 * f[i + 1];
-        coeff[6 * i + 3] = 0.5 * h * h * fxx[i];
-        coeff[6 * i + 4] = h * fx[i];
+            -10.0 * f[i] - 6.0 * fx[i] - 3.0 / 2  * fxx[i] 
+            + 0.5 * fxx[i + 1] - 4.0 * fx[i + 1] + 10.0 * f[i + 1];
+        coeff[6 * i + 3] = 0.5 * fxx[i];
+        coeff[6 * i + 4] =  fx[i];
         coeff[6 * i + 5] = f[i];
     }
 
@@ -1184,11 +1314,13 @@ int is_monotone
     returns TRUE if f is monotone increasing on [x0,x1],
     FALSE otherwise
 
+    This function is a direct portation of the Fortran 2003 routine by Thomas Lux.
+    Most comments have been adopted from original source code documentation.
     Original code:
-    Algorithm XXXX: MQSI – Monotone Quintic Spline Interpolation
+    Algorithm 1031: MQSI - Monotone Quintic Spline Interpolation
     Thomas C.H. Lux, Layne T. Watson, William Thacker, Tyler H. Chang. 
     ACM Transactions on Mathematical Software. Submitted August, 2020
-    https://tchlux.github.io/
+    https://github.com/tchlux/papers/tree/master/%5B2020-08%5D_ACMTOMS_(MQSI)
 */
 
 {
@@ -1329,8 +1461,7 @@ int is_monotone
 
 int is_monotone_index
 
-    (long index,  /* index to check for monotonicity*/
-     double h,    /* grid size */
+    (long   index,/* index to check for monotonicity*/
      double *f,   /* discrete function values */
      double *fx,  /* discrete derivatives */
      double *fxx) /* discrete second derivatives*/
@@ -1342,8 +1473,8 @@ int is_monotone_index
 */
 
 return is_monotone(
-    h*index, 
-    h*(index+1), 
+    index, 
+    index+1, 
     f[index], 
     f[index+1], 
     fx[index], 
@@ -1357,17 +1488,18 @@ return is_monotone(
 
 void mqsi 
     
-    (double h,              /* grid size */
-     double *f,             /* discrete function values to interpolate */
+    (double *f,             /* discrete function values to interpolate */
      double *coeff,         /* quintic hermite spline coefficients */
      long   n)              /* number of function values */
 
 /*
+    This function is a direct portation of the Fortran 2003 routine by Thomas Lux.
+    Most comments have been adopted from original source code documentation.
     Original code and comments:
-    Algorithm XXXX: MQSI – Monotone Quintic Spline Interpolation
+    Algorithm 1031: MQSI - Monotone Quintic Spline Interpolation
     Thomas C.H. Lux, Layne T. Watson, William Thacker, Tyler H. Chang. 
-    ACM Transactions on Mathematical Software. Submitted August, 2020
-    https://tchlux.github.io/
+    ACM Transactions on Mathematical Software. 
+    https://github.com/tchlux/papers/tree/master/%5B2020-08%5D_ACMTOMS_(MQSI)
 */
 
 {
@@ -1454,7 +1586,7 @@ for(i = 1; i < n-1; i++) {
     derivatives at all points. Use zero-sloped quadratic interpolants
     at extrema with left/right neighbors to estimate curvature.
 */
-
+if(TRUE) {
 for(i = 0; i < n; i++) {
     /* Initialize the curvature to be maximally large */
     fxx[i] = 1e54;
@@ -1473,10 +1605,10 @@ for(i = 0; i < n; i++) {
         fx[i] = 0.0;
         /* Compute the coefficient A in  Ax^2+Bx+C  that interpolates 
            at h(i-1) */
-        fxx[i] = (f[i-1] - f[i]) / (h*h);
+        fxx[i] = (f[i-1] - f[i]);
         /* Compute the coefficient A in  Ax^2+Bx+C  that 
            interpolates at h(i+1) */
-        A = (f[i+1] - f[i]) / (h*h);
+        A = (f[i+1] - f[i]);
         if(fabs(A) < fabs(fxx[i])) {
             fxx[i] = A;
         }
@@ -1507,16 +1639,16 @@ for(i = 0; i < n; i++) {
         if((i-1 > 0)) {
             /* If a zero derivative at left point, use its right interpolant */
             if(flats[i-1] || extrema[i-1]) {
-                A = (f[i]-f[i-1])/(h*h);
+                A = (f[i]-f[i-1]);
                 B = 0.0;
             }
             /* Otherwise use the standard quadratic on the left */
             else {
-                A = (f[i-2] + f[i] - 2*f[i-1])/(2*h*h);
-                B = (f[i] - f[i-2])/(2*h);
+                A = (f[i-2] + f[i] - 2*f[i-1])/2;
+                B = (f[i] - f[i-2])/2;
             }
         
-            dx = 2.0 * A * h + B;
+            dx = 2.0 * A  + B;
             if(dx*direction >= 0.0) {
                 fx[i] = dx;
                 fxx[i] = A;
@@ -1531,8 +1663,8 @@ for(i = 0; i < n; i++) {
             && (extrema[i+1] || flats[i+1]))) {
                 /* Construct quadratic interpolant through this point and 
                 neighbors */
-                A = (f[i-1] + f[i+1] - 2*f[i])/(2*h*h);
-                B = (f[i+1] - f[i-1])/(2*h);
+                A = (f[i-1] + f[i+1] - 2*f[i])/2;
+                B = (f[i+1] - f[i-1])/2;
                 dx = B;
                 /* Keep this new quadratic if it has less curvature */
                 /* add a case to original code for symmetry: 
@@ -1559,15 +1691,15 @@ for(i = 0; i < n; i++) {
         if((i+1 < n-1)) { 
             /* If a zero derivative at right point, use its left interpolant */
             if(extrema[i+1] || flats[i+1]) {
-                A = (f[i]-f[i+1])/(h*h);
+                A = (f[i]-f[i+1]);
                 B = 0.0;
             }
             /* Otherwise use the standard quadratic on the right */
             else {
-                A = (f[i] + f[i+2] - 2*f[i+1])/(2*h*h);
-                B = (f[i+2] - f[i])/(2*h);
+                A = (f[i] + f[i+2] - 2*f[i+1])/2;
+                B = (f[i+2] - f[i])/2;
             }
-            dx = 2.0 * A * (-h) + B;
+            dx = 2.0 * A * (-1) + B;
             /* Keep this new quadratic if it has less curvature */
             /* add a case to original code for symmetry: 
             if i is on the left of the center of the signal f
@@ -1598,11 +1730,57 @@ for(i = 0; i < n; i++) {
         }
     }
 }
+}
+
+/*---------------------------------------------------------------------------*/
+/*          TEST: Estimate initial derivatives by                            */
+/*         using a piecewise cubic splines in monotone intervals             */
+/*          with zero-derivative boundary conditions                         */
+/*---------------------------------------------------------------------------*/
+if(FALSE) {
+/* cubic spline derivs */
+/* start with first interval */
+i = 0;
+/* initialize curvature to be maximally large */
+A = 1e54;
+/* find each monotone section of the signal */
+for(j = 1; j < n; j++) {
+    /* loop until an extremum or flat point */
+    if(!((flats[j]) || (extrema[j]))) {
+        continue;
+    }
+    /* check if interval [i,j] is monotone and not flat */
+    if((extrema[i]) || (extrema[j]) || (j == n-1)) {
+        /* calculate cubic spline derivatives for the monotone interval */
+        /* use zero-derivative boundary conditions */
+        cubic_spline_derivs_zero_bc(f+i, fx+i, j-i+1);
+        cubic_spline_second_derivs(f+i, fx+i, fxx+i, j-i+1);
+        /* keep the smaller curvature */
+        if((fabs(A) < fabs(fxx[i]))) {
+            fxx[i] = A;
+        }
+        /* keep track of the current curvature to compare next step */
+        A = fxx[j];
+    } 
+    /* start at the end of the current monotone section */
+    i = j;
+}
+
+/* set flats to zero */
+for(i = 0; i < n; i++) {
+    if(flats[i]) {
+        fx[i] = 0.0;
+        fxx[i] = 0.0;
+    }
+}}
+
 
 /*---------------------------------------------------------------------------*/
 /*         Algorithm 3: Identify viable piecewise monotone                   */
 /*        derivative values by doing a quasi-bisection search                */
 /*---------------------------------------------------------------------------*/
+
+if(TRUE) { // hard coded switch for testing initial derivatives
 
 /* Store the initially estimated first and second derivative values */
 for(i = 0; i < n; i++) {
@@ -1621,7 +1799,7 @@ ns = 0;
 for(i = 0; i < n-1; i++) {
     /* Check for monotonicity on all segments that are not flat */
     if((!(flats[i] && flats[i+1])) 
-    && (!(is_monotone_index(i, h, f, fx, fxx)))) {
+    && (!(is_monotone_index(i, f, fx, fxx)))) {
         /* Store points bounding nonmonotone segments in the to_shrink queue */
         if(!shrinking[i]) {
             shrinking[i] = TRUE; 
@@ -1757,7 +1935,7 @@ while((searching || (ns > 0))) {
     for(j = 0; j < nc; j++) {
         i = to_check[j];
         checking[i] = FALSE;
-        if(!is_monotone_index(i, h, f, fx, fxx)) {
+        if(!is_monotone_index(i, f, fx, fxx)) {
             if(!shrinking[i]) {
                 shrinking[i] = TRUE;
                 to_shrink[ns] = i;
@@ -1772,9 +1950,9 @@ while((searching || (ns > 0))) {
     }  /* check_monotonicity */
     nc = 0;
 }
-
+}
 /* calculate quintic spline representation in terms of hermite coefficients */
-quintic_hermite_coeffs(h, f, fx, fxx, coeff, n);
+quintic_hermite_coeffs(f, fx, fxx, coeff, n);
 
 /* free memory */
 free(fx);
@@ -1801,8 +1979,7 @@ return;
 
 void linear_interpolation
 
-   (double  h,
-    double  *Y,         /* y-values */ 
+   (double  *Y,         /* y-values */ 
     double  *coeff,     /* hermite spline coefficients (output) */
     long    n)          /* number of (x,y) values */
 
@@ -1828,8 +2005,7 @@ return;
 
 void cubic_spline_interpolation
    
-   (double  h,          /* interval length */ 
-    double  *Y,         /* breakpoint values */ 
+   (double  *Y,         /* breakpoint values */ 
     double  *coeff,     /* hermite spline coefficients (output) */
     long    n)          /* number of (x,y) values */
 
@@ -1837,7 +2013,7 @@ void cubic_spline_interpolation
    interpolation with cubic spline derivatives;
    calculates the hermite coefficients; 
    nonmonotone, order 4 accurate
-   * equidistant version *
+   * equidistant version (h=1) *
 */
 
 {
@@ -1851,13 +2027,13 @@ alloc_double_vector(&delta,n-1);
 
 /* initialize delta */
 for (i=0; i<n-1; i++) 
-   delta[i] = (Y[i+1]-Y[i]) / h;
+   delta[i] = (Y[i+1]-Y[i]);
 
 /* calculate approximate derivatives */
-cubic_spline_derivs_eq (h, Y, d, n); 
+cubic_spline_derivs_eq (Y, d, n); 
 
 /* calculate cubic hermite coefficients */
-hermite_coeffs(h, Y, d, coeff, n);
+hermite_coeffs(Y, d, coeff, n);
 
 /* free variables */
 free_double_vector(d,n);
@@ -1869,15 +2045,14 @@ free_double_vector(delta,n-1);
 
 void mpci_basic
    
-   (double  h,          /* interval length */ 
-    double  *Y,         /* breakpoint values */ 
+   (double  *Y,         /* breakpoint values */ 
     double  *coeff,     /* hermite spline coefficients (output) */
     long    n)          /* number of (x,y) values */
 /*
    monotone piecewise cubic interpolation with Fritsch-Carlson method;
    calculates the hermite coefficients; 
    monotone, order 3 accurate
-   * equidistant version *
+   * equidistant version (h=1) *
 */
 
 {
@@ -1891,10 +2066,10 @@ alloc_double_vector(&delta,n-1);
 
 /* initialize delta */
 for (i=0; i<n-1; i++) 
-   delta[i] = (Y[i+1]-Y[i]) / h;
+   delta[i] = (Y[i+1]-Y[i]);
 
 /* STEP 1: calculate approximate derivatives */
-cubic_spline_derivs_eq (h, Y, d, n); 
+cubic_spline_derivs_eq (Y, d, n); 
 
 /* STEP 2: ensure that d[i] have the right sign */
 enforce_sign(d, delta, n);
@@ -1903,7 +2078,7 @@ enforce_sign(d, delta, n);
 modify_slopes_basic(d, delta, n);
 
 /* calculate cubic hermite coefficients */
-hermite_coeffs(h, Y, d, coeff, n);
+hermite_coeffs(Y, d, coeff, n);
 
 /* free variables */
 free_double_vector(d,n);
@@ -1915,8 +2090,7 @@ free_double_vector(delta,n-1);
 
 void mpci_extended_sweep
    
-   (double  h,          /* interval length */ 
-    double  *Y,         /* breakpoint values */ 
+   (double  *Y,         /* breakpoint values */ 
     double  *coeff,     /* hermite spline coefficients (output) */
     long    n)          /* number of (x,y) values */
 
@@ -1924,7 +2098,7 @@ void mpci_extended_sweep
    monotone piecewise cubic interpolation with extended sweep method;
    calculates the hermite coefficients;
    monotone, order 4 accurate
-   * equidistant version *
+   * equidistant version (h=1) *
 */
 
 {
@@ -1938,10 +2112,10 @@ alloc_double_vector(&delta,n-1);
 
 /* initialize delta */
 for (i=0; i<n-1; i++) 
-   delta[i] = (Y[i+1]-Y[i]) / h;
+   delta[i] = (Y[i+1]-Y[i]);
 
 /* STEP 1: calculate approximate derivatives */
-cubic_spline_derivs_eq (h, Y, d, n); 
+cubic_spline_derivs_eq (Y, d, n); 
    
 /* STEP 2: ensure that d[i] have the right sign */
 enforce_sign(d, delta, n);
@@ -1951,13 +2125,59 @@ extended_forward_sweep (d, delta, n);
 extended_backward_sweep (d, delta, n);
 
 /* calculate cubic hermite coefficients */
-hermite_coeffs(h, Y, d, coeff, n);
+hermite_coeffs(Y, d, coeff, n);
 
 /* free variables */
 free_double_vector(d,n);
 free_double_vector(delta,n-1);
 
 }  /* mpci_extended_sweep */
+
+
+/*--------------------------------------------------------------------------*/
+
+void interpolate_piecewise_Hermite
+
+   (double  *f,      /* input samples */
+    long    n,       /* number of sample points */
+    long    method,  /* interpolation method */
+    double  *coeff) /* coefficients (output) */
+
+/*
+   interpolates f using the specified piecwise Hermite interpolation method
+*/
+
+{
+void     (*interpolation)(double*, double*, long); /* interpolation method */
+
+/* initialize interpolation method */
+switch(method) {
+case 1:
+   interpolation = &linear_interpolation;
+   break;
+case 2:
+   interpolation = &cubic_spline_interpolation;
+   break;
+case 3:
+   interpolation = &mpci_basic;
+   break;
+case 4: 
+   interpolation = &mpci_extended_sweep;
+   break;
+case 5: 
+   interpolation = &mqsi;
+   break;
+default:
+   printf("interpolate_image_row_to_file: invalid method: %ld", method);
+   exit(1);
+}
+
+/* interpolate data with given method */
+interpolation(f, coeff, n);
+
+return; 
+
+}  /* interpolate_piecewise_Hermite */
 
 
 /*--------------------------------------------------------------------------*/
@@ -1968,7 +2188,6 @@ void interpolate_image_horizontal
      
      (long     nx,              /* image dimension in x direction */
       long     ny,              /* image dimension in y direction */
-      double   h,               /* pixel size in x and y direction */
       double   **u,             /* input image */
       double   **coeff,         /* coefficients in x direction, output */
       long     method)
@@ -1976,14 +2195,14 @@ void interpolate_image_horizontal
 /*
    interpolates image in x and y direction along pixels;
    returns coefficients of piecewise cubic polynomial interpolant
-   * equidistant version *
+   * equidistant version (h=1) *
 */
 
 {
 long     i, j;      /* loop variables */
 double   **Y;       /* values in x-direction (size ny * nx) */
 
-void (*interpolation)(double, double*, double*, long);
+void (*interpolation)(double*, double*, long);
 
 switch(method) {
 case 1:
@@ -2017,7 +2236,7 @@ for (j=0; j<=ny+1; j++)
 /* ---- loop for x-direction ---- */
 
 for (j=0; j<ny+2; j++) {
-   interpolation(h, Y[j], (coeff)[j], nx+2);
+   interpolation(Y[j], (coeff)[j], nx+2);
 }
 
  
@@ -2034,7 +2253,6 @@ void interpolate_image_vertical
 
      (long     nx,              /* image dimension in x direction */
       long     ny,              /* image dimension in y direction */
-      double   h,               /* pixel size in x and y direction */
       double   **u,             /* input image */
       double   **coeff,         /* coefficients in y direction, output */
       long     method)
@@ -2047,7 +2265,7 @@ void interpolate_image_vertical
 {
 long     i;         /* loop variable */
 
-void (*interpolation)(double, double*, double*, long);
+void (*interpolation)(double*, double*, long);
 
 switch(method) {
 case 1:
@@ -2072,7 +2290,7 @@ default:
 
 /* ---- loop for y-direction ---- */
 for (i=0; i<nx+2; i++) {
-   interpolation(h, u[i], (coeff)[i], ny+2);
+   interpolation(u[i], (coeff)[i], ny+2);
 }
 
 
@@ -2087,7 +2305,6 @@ void interpolate_image
 
      (long     nx,              /* image dimension in x direction */
       long     ny,              /* image dimension in y direction */
-      double   h,               /* pixel size in x and y direction */
       double   **u,             /* input image */
       double   **coeff_x,       /* coefficients in x direction, output */
       double   **coeff_y,       /* coefficients in y direction, output */
@@ -2100,8 +2317,8 @@ void interpolate_image
 
 {
 
-interpolate_image_horizontal (nx, ny, h, u, coeff_x, method);
-interpolate_image_vertical (nx, ny, h, u, coeff_y, method);
+interpolate_image_horizontal (nx, ny, u, coeff_x, method);
+interpolate_image_vertical (nx, ny, u, coeff_y, method);
 
 return;
 
@@ -2152,9 +2369,9 @@ if (fabs(dir_x) <= fabs(dir_y))
   /* calculate offset from starting position (i+1)*h */
   offs = 1.0 + dir_x / dir_y; // (0 < offs < 2 since |dir_x| <= |dir_y|)
   
-  /* calculate h_sqr = || (xi_x/xi_y, 1)^T ||² */
-  *h_sqr = h * (1.0 + dir_x * dir_x / (dir_y * dir_y));
- 
+  /* calculate h_sqr = h^2 * || (xi_x/xi_y, 1)^T ||^2 */
+  *h_sqr = h * h * (1.0 + dir_x * dir_x / (dir_y * dir_y));
+  
   /* evaluate interpolated image at intersection points */
   /* evaluate corresponding hermite polynomial */ 
   if (offs < 1.0) 
@@ -2176,8 +2393,8 @@ else
   /* calculate offset from starting position (j+1)*h */
   offs = 1.0 + dir_y / dir_x; // (0 < offs < 2 since |dir_y| < |dir_x|)
   
-  /* calculate h_sqr = || (1, dir_y/dir_x)^T ||² */
-  *h_sqr = h * (1.0 + dir_y * dir_y / (dir_x * dir_x));
+  /* calculate h_sqr = h^2 * || (1, dir_y/dir_x)^T ||^2 */
+  *h_sqr = h * h * (1.0 + dir_y * dir_y / (dir_x * dir_x));
   
   /* evaluate interpolated image at intersection points */
   /* evaluate corresponding hermite polynomial */      
@@ -2203,6 +2420,103 @@ return;
 /*              MEAN CURVATURE MOTION PDE EXPLICIT TIME SCHEME              */
 /*--------------------------------------------------------------------------*/
 
+void mcm_delta 
+
+     (double   tau,       /* time step size */
+      double   alpha,     /* dissipativity parameter in delta stencil */
+      double   gamma,     /* nonnegativity parameter in delta stencil */
+      long     nx,        /* image dimension in x direction */
+      long     ny,        /* image dimension in y direction */
+      double   h,         /* pixel size in x and y direction */
+      double   **u)       /* image, changed */
+
+/*
+   original source code by Joachim Weickert (2021)
+   for the explicit delta scheme
+   explicit scheme for MCM with delta stencil
+*/
+
+{
+long     i, j;                  /* loop variables */
+double   **f;                   /* image u at old time level */
+double   fx, fy;                /* Sobel derivatives */
+double   f00, f11, f22, f33;    /* 2nd derivatives in principal directions */
+double   inv_4h, inv_8h;        /* time savers */
+double   inv_hh, inv_2hh;       /* time savers */
+double   inv_grad_sqr, aux;     /* time savers */
+double   a, b, c;               /* weights for u_{xx}, u_{xy}, u_{yy} */
+double   delta;                 /* free parameter in the delta stencil */
+
+
+/* ---- allocate memory ---- */
+
+alloc_double_matrix (&f, nx+2, ny+2);
+
+
+/* ---- copy u to f ---- */
+
+for (i=1; i<=nx; i++)
+ for (j=1; j<=ny; j++)
+     f[i][j] = u[i][j];
+
+
+/* ---- reflecting dummy boundaries ---- */
+
+dummies_double (f, nx, ny);
+
+
+/* ---- compute time savers ---- */
+
+inv_4h  = 1.0 / (4.0 * h);
+inv_8h  = 1.0 / (8.0 * h);
+inv_hh  = 1.0 / (h * h);
+inv_2hh = 1.0 / (2.0 * h * h);
+aux     = gamma * (1 - 2.0 * alpha);
+
+
+/* ---- loop ---- */
+
+for (i=1; i<=nx; i++)
+ for (j=1; j<=ny; j++)
+     {
+     /* compute Sobel derivatives */
+     fx  =   (f[i+1][j+1] - f[i-1][j+1]) * inv_8h
+           + (f[i+1][j]   - f[i-1][j]  ) * inv_4h
+           + (f[i+1][j-1] - f[i-1][j-1]) * inv_8h;
+     fy  =   (f[i+1][j+1] - f[i+1][j-1]) * inv_8h
+           + (f[i]  [j+1] - f[i]  [j-1]) * inv_4h
+           + (f[i-1][j+1] - f[i-1][j-1]) * inv_8h;
+
+     /* compute (slightly regularised) inverse squared gradient */
+     inv_grad_sqr = 1.0 / (fx * fx + fy * fy + 1.0e-10);
+    
+     /* compute important intermediate expressions */ 
+     a =   fy * fy * inv_grad_sqr;
+     b = - fx * fy * inv_grad_sqr;
+     c =   fx * fx * inv_grad_sqr; 
+     delta = alpha * (a + c) + aux * fabs(b);
+
+     /* compute second order derivatives in the 4 principal directions */
+     f00 = (f[i+1][j]   - 2.0 * f[i][j] + f[i-1][j])   * inv_hh; 
+     f22 = (f[i][j+1]   - 2.0 * f[i][j] + f[i][j-1])   * inv_hh;
+     f11 = (f[i+1][j+1] - 2.0 * f[i][j] + f[i-1][j-1]) * inv_2hh;   
+     f33 = (f[i-1][j+1] - 2.0 * f[i][j] + f[i+1][j-1]) * inv_2hh;   
+     
+     /* explicit update step for MCM */
+     u[i][j]  = f[i][j] + tau * ( (a - delta) * f00 + (delta + b) * f11
+                                + (c - delta) * f22 + (delta - b) * f33 );
+     }
+
+
+/* ---- free memory ---- */
+ 
+free_double_matrix (f, nx+2, ny+2);
+
+return;
+
+}  /* mcm_delta */
+/*--------------------------------------------------------------------------*/
+
 void mcm_step
 
      (double   tau,           /* time step size */
@@ -2215,6 +2529,8 @@ void mcm_step
       long     method)        /* interpolation method */
 
 /*
+   Adapted version of original source code by Joachim Weickert (2021)
+   for the explicit delta scheme. 
    explicit scheme for MCM;
    approximates u_{\xi \xi} direcltly using interpolated neighbouring
    image values in \xi-direction (direction of the isophote)
@@ -2247,7 +2563,7 @@ dummies_double (f, nx, ny);
 
 /* ---- interpolate image ---- */
      
-interpolate_image (nx, ny, h, f, coeff_x, coeff_y, method); 
+interpolate_image (nx, ny, f, coeff_x, coeff_y, method); 
 
 /* ---- compute time savers ---- */
 
@@ -2270,23 +2586,28 @@ for (i=1; i<=nx; i++)
      /* compute squared gradient */
      grad_sqr = fx * fx + fy * fy;
      
+     
      /* no changes if gradient magnitude is zero */
      if (grad_sqr < EPS)
         continue;
+     
         
      /* compute inverse gradient magnitude */
      inv_grad = 1.0 / sqrt (grad_sqr);
+
      
      /* compute normed xi vector (direction of the isophote) */
      xi_x = -fy * inv_grad;
      xi_y = fx * inv_grad;
-    
+  
+     
      /* get interpolated adjacent image values in xi-direction */
      
      approx_neighbours 
         (&n1, &n2, &h_sqr, i, j, xi_x, xi_y, h, nx, ny, u, 
             coeff_x, coeff_y, method);
-
+     
+   
      /* explicit update step for MCM */
      u[i][j] = f[i][j] + tau * (n1 - 2*u[i][j] + n2) / h_sqr;
      
@@ -2330,6 +2651,7 @@ alloc_double_matrix (&coeff_x, ny+2, (nx+2-1) * p);
 for (k=1; k<=kmax; k++) {
    printf ("iteration:   %ld / %ld \n", k, kmax);
    mcm_step (tau, nx, ny, h, u, coeff_x, coeff_y, method);
+    
 }  
    
 /* ---- free memory ---- */
@@ -2341,7 +2663,713 @@ return;
 }  /* mcm */
 
 /*--------------------------------------------------------------------------*/
-/*                 TESTING/EVALUATION FUNCTIONS                             */
+/*                 FUNCTIONS FOR EXPERIMENTS / EVALUATION                   */
+/*--------------------------------------------------------------------------*/
+
+long* create_random_zeros 
+
+   (long  m,     /* number of zeros */
+     long min,   /* minimum zero */
+     long max)   /* maxumum zero (min < max) */
+
+/*
+   returns a random zero set between min and max 
+*/
+
+{
+
+   long i;            // loop variable 
+   long n;            // width of the zero set domain  
+   long *z;           // zeros of the polynomial
+   
+   n = max-min;
+
+   /* allocate memory */
+   z = malloc(sizeof(long)*(m+1));
+   
+
+   /* generate random zeros and store them in z */
+   for(i = 1; i <= m; i++) {
+      // pseudo-random integer between min and max
+      z[i] = (rand() % (n+1)) + min; 
+   }
+
+   return z;
+
+}  /* create_random_zeros */
+
+/*--------------------------------------------------------------------------*/
+
+void expand_zero
+   
+   (long *c,   /* polynomial in expanded form of degree < deg */
+    long z,    /* linear factor (x-z) */
+    long deg)  /* max degree */
+
+/* 
+   subroutine for expand_zeros
+   expands the polynomial given by p = (sum_c_i)*(x-z) 
+   modifies the coefficients c_i
+*/
+
+{
+long  i;    /* loop variable */
+long  *c_copy; 
+
+/* allocate memory */
+c_copy = malloc(sizeof(long)*(deg+1));
+
+/* initialize copy */
+for(i = 0; i <= deg; i++) {
+   c_copy[i] = c[i];
+}
+
+/* p = p-z */
+for(i = 0; i < deg; i++) {
+   c[i] *= -z;
+}
+
+/* p += p*x */
+for(i = 1; i <= deg; i++) {
+   c[i] += c_copy[i-1];
+}
+
+/* free memory */
+free(c_copy);
+
+return;
+
+}  /* expand_zero */
+
+/*--------------------------------------------------------------------------*/
+
+long* expand_zeros
+
+   (long *z,    /* zero set of the polynomial */
+    long deg)   /* degree of the polynomial */
+
+/*
+   returns integer coefficients of a  
+   polynomial with zero set domain between min and max 
+*/
+
+{
+
+   long i;            // loop variable
+   long *c;           // coefficients of the polynomial
+
+   /* allocate memory */
+   c = malloc(sizeof(long)*(deg+1));
+
+   /* the polylomial p is given by prod_i (x-z[i]) */
+   /* goal: coefficients s.t. p = sum_i c[i]x^i */
+   c[0] = 1;
+   for(i = 1; i <= deg; i++) {
+      expand_zero(c, z[i], deg);
+   }
+
+   return c;
+
+}  /* expand_zeros */
+
+/*--------------------------------------------------------------------------*/
+
+double* integrate_poly
+   
+   (long *c,    /* coefficients */
+    long deg)   /* degree */
+
+/*
+   integrates the polynomial sum_i c_i x^i and returns the new coefficients
+*/
+
+{
+   long    i;       /* loop variable */
+   double  *c_integ; 
+
+   /* allocate memory */
+   c_integ = malloc(sizeof(double)*(deg+2));
+
+
+   c_integ[0] = 0; /* integration constant */
+
+   
+   for(i = 1; i <= deg+1; i++) {
+      c_integ[i] = (double)(1.0/i * c[i-1]);
+   } 
+
+   return c_integ;
+
+}  /* integrate_poly */
+
+/*--------------------------------------------------------------------------*/
+
+double eval_poly
+
+   (double  x,       /* evaluation point */
+    double  *c,      /* coefficients */
+    long    deg)     /* degree */
+ 
+ /*
+   returns sum_i c_i x^i
+ */
+
+{
+   long   i;       /* loop variable */ 
+   double  res;   /* result */
+
+   res = 0.0;
+   for(i = 0; i <= deg; i++) {
+      res += c[i] * pow(x,i);
+   }
+
+   return res;
+
+}  /* eval_poly */
+
+/*--------------------------------------------------------------------------*/
+
+void print_poly
+
+   (double *c, /* coefficients */
+    long   deg)   /* degree */
+
+/*
+   prints polynomial sum_i c[i]c^i to console
+*/
+
+{
+long i;  /* loop variable */
+
+printf("%+lf", c[0]);
+for(i = 1; i < deg; i++) {
+   if(c[i] != 0) {
+      printf("%+lfx^%ld", c[i], i);
+   }
+}
+if(deg > 0) {
+   if(c[deg] != 0) {
+      printf("%+lfx^%ld", c[deg], deg);
+   }
+}
+printf("\n");
+
+return;
+
+}  /* print_poly */
+
+/*--------------------------------------------------------------------------*/
+
+void sample_poly
+
+   (double  *c,
+    double  deg,
+    long    start,
+    long    end,
+    double  *Y)
+/*
+   samples the polynomial sum_i c_i x^i stores sample breakpoints in Y
+   samples at sample distance 0.5 over the interval [start, end]
+*/
+
+{
+
+long i, j, k;  /* loop variables */
+long   n;      /* sample size for each interval */
+double x;      /* sample point x-value*/
+n = 2;
+k = 0;
+for(i = start; i < end; i++) {
+   for(j = 0; j < n; j++) {
+      x = i + 1.0*j/n;
+      Y[k] = eval_poly(x, c, deg);
+      k++;
+   }
+}
+Y[k] = eval_poly(end, c, deg);
+
+return;
+
+}  /* sample_poly */
+
+/*--------------------------------------------------------------------------*/
+
+void sample_poly_to_file
+
+   (double *c,     /* coefficients */
+    long    deg,   /* degree */
+    long    start, /* sample start point */
+    long    end)   /* sample end point */
+
+/*
+   samples the polynomial sum_i c_i x^i and writes samples to file
+   samples at sample distance 0.5 over the interval [start, end]
+*/
+
+{
+
+   long   i, j;   /* loop variables */
+   long   n;      /* sample size for each interval */
+   long   m;      /* sample size for exact data */
+   double x;      /* sample point x-value */
+   FILE  *f;      /* output file */
+   FILE  *g;      /* output file 2 */
+
+   n = 2;
+   m = 100;
+   f = fopen("sample.dat", "w");
+   if (NULL == f) {
+      printf("could not open file 'sample.dat' for writing, aborting\n");
+      exit(1);
+   }
+   for(i = start; i < end; i++) {
+      for(j = 0; j < n; j++) {
+         x = i + 1.0*j/n;
+         fprintf(f, "%lf %lf\n", x, eval_poly(x, c, deg));
+      }
+   }
+   fprintf(f, "%lf %lf\n", (double)end, eval_poly((double)end, c, deg));
+
+   fclose(f);
+
+   
+   g = fopen("sample_exact.dat", "w");
+   if (NULL == g) {
+      printf("could not open file 'sample_exact.dat' for writing, aborting\n");
+      exit(1);
+   }
+   for(i = start; i < end; i++) {
+      for(j = 0; j < m; j++) {
+         x = i + 1.0*j/m;
+         fprintf(g, "%lf %lf\n", x, eval_poly(x, c, deg));
+      }
+   }
+   fprintf(g, "%lf %lf\n", (double)end, eval_poly((double)end, c, deg));
+   fclose(g);
+
+   printf(
+      "output files 'sample.dat' and 'sample_exact.dat' successfully written\n"
+   );
+
+   return;
+
+}  /* sample_poly_to_file */
+
+/*--------------------------------------------------------------------------*/
+
+void sample_piecewise_poly_to_file
+
+   (char   *fname,   /* output file name */
+    double h,        /* interval length */
+    double *Y,       /* breakpoint values */
+    double *coeff,   /* Hermite coefficients */
+    long   n,        /* number of breakpoitns */
+    long   p)        /* spline order */
+
+/*
+   samples piecewise polynomial and writes samples Y and interpolant to file
+   * equidistant version *
+*/
+   
+{
+long i, j;  /* loop variable */
+long N;     /* sample rate */
+double x;   /* sample point x-value*/
+FILE *f;    /* output file */
+
+N = SAMPLE_RATE;
+
+f = fopen(fname, "w");
+if (NULL == f) {
+   printf("could not open file '%s' for writing, aborting\n", fname);
+   exit(1);
+}
+
+for(i = 0; i < n-1; i++) {
+   for(j = 0; j < N; j++) {
+      x = i + j*1.0/N;
+      fprintf(f, "%lf %lf\n", x*h, eval_piecewise_poly(x, coeff, p, n));
+   }
+}
+
+fclose(f);
+
+printf("output file %s successfully written\n", fname);
+
+return; 
+
+}  /* sample_piecewise_poly_to_file */
+
+/*--------------------------------------------------------------------------*/
+
+void specific_poly_to_file
+
+   (long    deg,     /* degree */
+    double  *c)      /* coefficients of size degree+1 */
+
+/*
+   samples given polynomial at 10 equidistant
+   positions in [0,5], interpolates it with the different Hermite
+   interpolation methods and writes the results to files for plotting
+*/
+
+{
+long i;        /* loop variable */
+double  *Y;          /* sampled values */
+double  *coeff;      /* coefficients of Hermite inerpolant */
+char    fname[80];   /* plot file name */
+
+/* allocate memory */
+alloc_double_vector(&coeff, 10*6);
+alloc_double_vector(&Y, 11);
+
+/* sample polynomial for plotting  */
+sample_poly(c, deg, 0, 5, Y);
+
+/* sample polynomial for plotting */
+sample_poly_to_file(c, deg, 0, 5);
+
+for(i = 1; i <= 5; i++) {
+   /* interpolate */
+   interpolate_piecewise_Hermite(Y, 11, i, coeff);
+
+   /* write file name */
+   snprintf(fname, sizeof(char) * 32, "interpolant_%ld.dat", i);
+
+   /* sample interpolant for plotting */
+   sample_piecewise_poly_to_file(fname, 0.5, Y, coeff, 11, i < 5 ? 4 : 6);
+}
+
+/* free memory */
+free(Y);
+free(coeff);
+
+return;
+
+}  /* specific_poly_to_file */
+
+/*--------------------------------------------------------------------------*/
+
+void random_poly_to_file
+
+   (long deg)  /* degree */
+
+/*
+   creates a random polynomial of degree deg and samples it at 10 equidistant
+   positions in [0,5], interpolates it with the different Hermite
+   interpolation methods and writes the results to files for plotting
+*/
+
+{
+long i;        /* loop variable */
+long    *z;          /* zero set */
+long    *z_expand;   /* expanded coefficients */
+double  *c;          /* integrated polynomial coefficients */
+double  *Y;          /* sampled values */
+double  *coeff;      /* coefficients of Hermite inerpolant */
+char    fname[80];   /* plot file name */
+
+/* allocate memory */
+z = malloc(sizeof(long)*(deg-1));
+alloc_double_vector(&coeff, 10*6);
+alloc_double_vector(&Y, 11);
+
+/* create integer zero set (defines derivative, thus deg-1) */
+z = create_random_zeros(deg-1, 0, 5);
+
+printf("zeros of derivative:\n");
+for(i = 1; i <= deg-1; i++) {
+   printf("%ld\n", z[i]);
+}
+
+/* expand in order to be able to integrate analytic */
+z_expand = expand_zeros(z, deg-1);
+
+/* integrate */
+c = integrate_poly(z_expand, deg);
+
+/* sample polynomial for plotting  */
+sample_poly(c, deg, 0, 5, Y);
+
+/* sample polynomial for plotting */
+sample_poly_to_file(c, deg, 0, 5);
+
+for(i = 1; i <= 5; i++) {
+   /* interpolate */
+   interpolate_piecewise_Hermite(Y, 11, i, coeff);
+
+   /* write file name */
+   snprintf(fname, sizeof(char) * 32, "interpolant_%ld.dat", i);
+
+   /* sample interpolant for plotting */
+   sample_piecewise_poly_to_file(fname, 0.5, Y, coeff, 11, i < 5 ? 4 : 6);
+}
+
+/* free memory */
+free(z);
+free(Y);
+free(coeff);
+
+return;
+
+}  /* random_poly_to_file */
+
+/*--------------------------------------------------------------------------*/
+
+void test_reproduction_order
+   
+   (long    deg,     /* degree */
+    long    method)  /* method */
+
+/*
+   test if interpolant of given method accurately reproduces
+   polynomials p of degree deg on [0,5] that have extrema in {0,...,5} and 
+   have a representation p = int(prod_i=1^{deg-1} (x-z[i]))
+*/
+
+{
+   long    i, j, k;     /* loop variables */
+   long    *z;          /* zero set */
+   long    *z_expand;   /* expanded coefficients */
+   double  *c;          /* integrated polynomial coefficients */
+   long    N;           /* number of tests */
+   long    p;           /* spline order of the Hermite interpolant method */
+   double  *Y;          /* sampled values */
+   double  x, y1, y2;   /* evaluation points */
+   int     exact;       /* boolean variable */
+   double  *coeff;      /* coefficients of Hermite inerpolant */
+
+
+   /* initialize the spline order depending on the used method */  
+   p = method == 5 ? 6 : 4;
+
+   /* 10 * number of possible zero sets */
+   N = 10* (long)pow(5, deg-1); 
+
+   exact = TRUE;
+
+   /* allocate memory */
+   z = malloc(sizeof(long)*(deg-1));
+   alloc_double_vector(&coeff, 10*p);
+   alloc_double_vector(&Y, 11);
+   
+   for(k = 0; k < N; k++) {
+      /* create integer zero set (defines derivative, thus deg-1) */
+      z = create_random_zeros(deg-1, 0, 5);
+
+      /* expand in order to be able to integrate analytic */
+      z_expand = expand_zeros(z, deg-1);
+
+      /* integrate */
+      c = integrate_poly(z_expand, deg);
+
+      /* sample polynomial for plotting  */
+      sample_poly(c, deg, 0, 5, Y);
+
+      /* interpolate */
+      interpolate_piecewise_Hermite(Y, 11, method, coeff);
+
+      /* evaluate */
+      for(i = 0; i < 5; i++) {
+         /* check 10 samples for two sample interavals [i,i+1/2], [i+1/2,i+1]*/
+         /* results in 6 checks per sample interval */
+         /* sufficient to check for exact approx. in cubic and quintic case */
+         for(j = 0; j < 10; j++) {
+            x = i + j * 1.0/10;
+            y1 = eval_poly(x, c, deg);
+            y2 = eval_piecewise_poly(2*x, coeff, p, 11);
+            if(fabs(y1-y2) > EPS) {
+               exact = FALSE;
+            }
+         }
+      }
+   }
+   if(exact) {
+      printf("interpolants are exact.\n");
+   }
+   else {
+      printf("interpolants are not exact.\n");
+   }
+
+   /* free memory */
+   free(z);
+   free(Y);
+   free(coeff);
+
+   return;
+}  /* test_reproduction_order */
+
+/*--------------------------------------------------------------------------*/
+
+void interpolate_image_row_to_file 
+
+   (char    in[80],  /* image file name (for comments) */
+    double  **u,     /* image */
+    long    nx,      /* image size in x-direction */
+    long    method,  /* method (method_parameter) */
+    long    row)     /* image row to interpolate */
+    
+/*
+   interpolates the specified row of the image with given method 
+   and writes the sampled interpolant to a file for plotting purposes
+*/
+
+{
+long     i, j;                /* loop variables */
+double   *Y;                  /* sampled image values */
+double   *coeff;              /* coefficients of the piecwise Hermite interpolant*/
+long     N;                   /* number of samples per interval */
+long     p;                   /* spline order of the Hermite interpolant method */
+char     comments[1600];      /* string for comments */
+char     file_name[32];       /* output file name */
+FILE     *f;                  /* file 1 */
+FILE     *g;                  /* file 2 */
+
+/* method descriptions */
+char description[5][80] = {
+   "Linear Spline", 
+   "Cubic Spline", 
+   "Fritsch-Carlson (1980)", 
+   "Extended Two-Sweep (Eisenstat 1985)", 
+   "MQSI (Lux 2020)"
+};
+
+N =  SAMPLE_RATE;       
+
+/* initialize the spline order depending on the used method */  
+p = method == 5 ? 6 : 4;
+
+/* allocate memory */
+alloc_double_vector(&Y, nx+2);
+alloc_double_vector(&coeff, (nx+1)*p);
+
+/* write file name which depends on the method */
+snprintf(file_name, sizeof(char) * 32, "interpolant_%ld.dat", method);
+
+/* initialize row to interpolate */
+for (i=0; i<=nx+1; i++) {
+   Y[i] = u[row][i];
+}
+
+/* interpolate data with given method */
+interpolate_piecewise_Hermite(Y, nx+2, method, coeff);
+
+/* write comments */
+comments[0] = 0;
+comment_line (comments, "# data for plotting purposes\n");
+comment_line (comments, "# interpolant of single row of initial pgm image\n");
+comment_line (comments, 
+"#----------------------------------------------------------------------#\n");
+comment_line (comments, "# initial image:  %s\n", in);
+comment_line (comments, "# method:         %s\n", description[method-1]);
+comment_line (comments, "# row:                          %ld\n", row);
+comment_line (comments, 
+"#----------------------------------------------------------------------#\n");
+
+/* write data to file */
+f = fopen("breakpoints.dat", "w");
+if (NULL == f) {
+   printf("could not open file 'breakpoints.dat' for writing, aborting\n");
+   exit(1);
+}
+/* write comments */
+fprintf (f, "%s", comments);  
+for (i = 1; i <= nx; i++) {
+   fprintf(f, "%ld %lf\n", i, Y[i]);
+}
+fclose(f);
+
+g = fopen(file_name, "w");
+if (NULL == f) {
+   printf("could not open file '%s' for writing, aborting\n", file_name);
+   exit(1);
+}
+fprintf (g, "%s", comments); 
+for(i = 1; i < nx; i++) {
+   for(j = 0; j < N; j++) {
+      fprintf(
+         g, 
+         "%lf %lf\n", 
+         i + j*1.0/N, 
+         eval_piecewise_poly(i + j*1.0/N, coeff, p, nx+2)
+      );
+   }
+}
+fclose(g);
+
+printf (
+   "breakpoints.dat and interpolant_%ld.dat successfully written\n\n", 
+   method
+);
+
+/* free memory */
+free_double_vector(Y, nx+2);
+free_double_vector(coeff, (nx+1)*p);
+
+return;
+
+}  /* interpolate_image_row_to_file */
+
+/*--------------------------------------------------------------------------*/
+
+
+void resize_image
+     
+     (long     method,          /* interpolation method parameter */
+      long     nx,              /* image dimension in x direction */
+      long     ny,              /* image dimension in y direction */
+      double   **u,             /* input image */
+      long     nx_new,           /* new x-dimension */
+      long     ny_new,           /* new y-dimension */
+      double   ***w)             /* resized image, output */
+
+/*
+   resizes the image with the specified interpolation 
+   method to match the new dimensions 
+*/
+
+{
+long     i, j;                       /* loop variables */
+double   **coeff_x, **coeff_y;       /* coefficients of interpolants */
+double   **v;                        /* horizontally resized image */
+double   aux;                        /* auxiliary variable */
+long     p;
+   
+/* initialize the spline order depending on the used method */  
+p = method == 5 ? 6 : 4;
+
+/* ---- allocate memory ---- */
+alloc_double_matrix (&coeff_x, ny+2, (nx+2-1) * p);
+alloc_double_matrix (&coeff_y, nx_new+2, (ny+2-1) * p);
+alloc_double_matrix (&v, nx_new+2, ny+2);
+alloc_double_matrix (w, nx_new+2, ny_new+2);
+
+interpolate_image_horizontal (nx, ny, u, coeff_x, method);
+
+for (j=0; j<=ny+1; j++) {
+   for (i=0; i<=nx_new+1; i++) {
+      aux = (double)i/(nx_new+1) * (nx+1);
+      v[i][j] = eval_piecewise_poly (aux, coeff_x[j], p, nx+2);
+   }
+}
+
+interpolate_image_vertical (nx_new, ny, v, coeff_y, method);
+
+for (i=0; i<=nx_new+1; i++) {
+   for (j=0; j<=ny_new+1; j++) {
+      aux = (double)j/(ny_new+1) * (ny+1);
+      (*w)[i][j] = eval_piecewise_poly (aux, coeff_y[i], p, ny+2);
+   }
+}
+
+/* free memory */
+free_double_matrix (coeff_x, ny+2, (nx+2-1) * p);
+free_double_matrix (coeff_y, nx_new+2, (ny+2-1) * p);
+free_double_matrix (v, nx_new+2, ny+2);
+
+return;
+}
+
 /*--------------------------------------------------------------------------*/
 
 void generate_disk_image
@@ -2363,12 +3391,47 @@ double mx, my;   /* middle point coordinates */
 mx = (double)(nx+1) / 2.0;
 my = (double)(ny+1) / 2.0;
 
-/* set image values to zero */
+/* set image values */
 for(i = 0; i < nx+2; i++) {
    for(j = 0; j < ny+2; j++) {
       u[i][j] = 0.0;
       if((mx-i)*(mx-i) + (my-j)*(my-j) <= sigma * sigma) {
          u[i][j] = 255.0;
+      }
+   }
+}  
+
+return;  
+
+}  /* generate_disk_image */
+
+/*--------------------------------------------------------------------------*/
+
+void generate_square_image
+
+   (long    nx,      /* image dimension in x direction */
+    long    ny,      /* image dimension in y direction */
+    double  len,     /* side length of the square */
+    double  **u)     /* image, ouput */
+
+/*
+   generate disk shaped image of size nx*ny
+*/ 
+ 
+{
+long i, j;       /* loop variables */
+double mx, my;   /* middle point coordinates */
+
+/* initialize middle point coordinates */
+mx = (double)(nx+1) / 2.0;
+my = (double)(ny+1) / 2.0;
+
+/* set image values */
+for(i = 0; i < nx+2; i++) {
+   for(j = 0; j < ny+2; j++) {
+      u[i][j] = 30.0;
+      if(fmax(fabs(mx-i),fabs(my-j)) <= len/2) {
+         u[i][j] = 225.0;
       }
    }
 }  
@@ -2393,8 +3456,8 @@ void diff_image
 
 {
    long i, j;     /* loop variables */
-   for(i = 0; i < nx+2; i++) {
-      for(j = 0; j < ny+2; j++) {
+   for(i = 1; i <= nx; i++) {
+      for(j = 1; j <= ny; j++) {
          w[i][j] =  fabs(u[i][j] - v[i][j]);
       }
    }
@@ -2405,40 +3468,248 @@ void diff_image
 
 /*--------------------------------------------------------------------------*/
 
+void threshold_image
+   
+     (long   nx,     /* image dimension in x direction */
+      long   ny,     /* image dimension in y direction */
+      double **u,    /* image, edited */
+      double thresh) /* threshold */
+
+/*
+   sets image values below given threshold to 0 and 
+   sets image values above given threshold to 255
+*/
+
+{
+long i, j;     /* loop variables */
+
+for(i = 0; i < nx+2; i++) {
+   for(j = 0; j < nx+2; j++) {
+      if(u[i][j] < thresh) {
+         u[i][j] = 0.0;
+      }
+      else {
+         u[i][j] = 255;
+      }
+   }
+}
+
+return;
+
+}  /* threshold_image */
+
+/*--------------------------------------------------------------------------*/
+
+double disk_image_radius
+
+   (double  h,       /* pixel size */
+    long    nx,      /* image dimension in x direction */
+    long    ny,      /* image dimension in y direction */
+    double  **u)     /* disk shaped image */
+    
+/*
+   returns the radius of a centered disk shaped image
+*/
+
+{
+double radius; /* result */
+long i;        /* loop variable */
+
+radius = 0.0;
+/* distance between the first pixel in the middle row which is 
+   255 and the center of the image */
+for(i = 1; i <= nx; i++) {
+    if((long)(u[i][(ny+1)/2]) == 255) {
+      radius = fabs(h * ((double)(nx+1) / 2.0 - (i + 0.499)));
+    }
+}
+
+return radius;
+
+}
+
+/*--------------------------------------------------------------------------*/
+
+double mse
+   (double  **u,  /* error image */
+    long    nx,   /* image size in x direction */
+    long    ny)   /* image size in y direction */
+
+/*
+   returns the mean squared error of the image u in comparison to zero
+*/
+
+{
+   long     i, j;     /* loop variables */
+   double   mse;      /* mean squared error */
+   mse = 0.0;
+   for(i = 1; i <= nx; i++) {
+      for(j = 1; j <= ny; j++) {
+         mse += u[i][j] * u[i][j];
+      }
+   }
+   return mse / (nx*ny);
+}  /* mse */
+
+/*--------------------------------------------------------------------------*/
+
+double partial_disk_area
+   
+   (double sigma,    /* radius of the disk centred at (0,0) */
+    double posX,     /* x position of the pixel's centre */
+    double posY,     /* y position of the pixel's centre */
+    double N)        /* number of samples in one direction */
+
+/*
+   returns the approximate area of the disk of radius sigma that covers the 
+   pixel of size 1 and distance r from the centre of the disk.
+*/
+
+{
+   long   i, j;      /* loop variables */
+   double startX;    /* start x-value of the pixel as a square */
+   double startY;    /* start y-value of the pixel as a square */ 
+   double step;      /* step size of the numerical integration  */
+   double sampleX;   /* sample x-position of the numerical integration */
+   double sampleY;   /* sample y-position of the numerical integration */
+   double sigma_sqr; /* squared radius for calculations */
+
+   N = 100;
+   step = 1.0/N;
+   
+   sigma_sqr = sigma*sigma;
+
+   startX = posX - 0.5;
+   startY = posY - 0.5;
+   
+   sampleX = startX;
+   sampleY = startY;
+
+   double area = 0.0;
+
+   for(i = 0; i <= N; i++) {
+      sampleY = startY;
+      sampleX += step;
+      for(j = 0; j <= N; j++) {
+         sampleY += step;
+         if(sampleX*sampleX + sampleY*sampleY <= sigma_sqr) {
+            area++;
+         }
+      }
+   }
+   area = area/(N*N);
+
+   return area;
+
+}  /* partial_area */
+
+/*--------------------------------------------------------------------------*/
+
+void generate_disk_image_partial_area
+
+   (long    nx,      /* image dimension in x direction */
+    long    ny,      /* image dimension in y direction */
+    double  sigma,   /* radius of the disk */
+    double  **u)     /* image, ouput */
+
+/*
+   generate disk shaped image of size nx*ny with partial area effect
+*/ 
+ 
+{
+long    i, j;              /* loop variables */
+double  mx, my;            /* middle point coordinates */
+double  sigma_sqr_lower;   /* (sigma-1)^2 */
+double  sigma_sqr_upper;   /* (sigma+1)^2 */
+
+/* initialize middle point coordinates */
+mx = (double)(nx+1) / 2.0;
+my = (double)(ny+1) / 2.0;
+
+sigma_sqr_lower = (sigma-1)*(sigma-1);
+sigma_sqr_upper = (sigma+1)*(sigma+1);
+
+/* set image values */
+for(i = 0; i < nx+2; i++) {
+   for(j = 0; j < ny+2; j++) {
+      u[i][j] = 0.0;
+      if((mx-i)*(mx-i) + (my-j)*(my-j) <= sigma_sqr_lower) {
+         u[i][j] = 255.0;
+      }
+      /* partial area effect kicks in */
+      else if((mx-i)*(mx-i) + (my-j)*(my-j) <= sigma_sqr_upper) {
+         u[i][j] = 255.0 * partial_disk_area(sigma, mx-i, my-j, 1000);
+      }
+      /* outside of the range of the partial area effect */
+      else  {
+         u[i][j] = 0.0;
+      }
+   }
+}  
+
+return;  
+
+}  /* generate_disk_image_partial_area */
+
+/*--------------------------------------------------------------------------*/
+
 void disk_shrinkage
 
      (double   tau,       /* time step size */
       long     nx,        /* image dimension in x direction */
       long     ny,        /* image dimension in y direction */
       double   h,         /* pixel size in x and y direction */
-      double   **u,       /* image, changed */
       double   sigma)     /* radius of the disk */
 /*
-   iterative explicit scheme for MCM with interpolation;
+   iterative explicit scheme for MCM with interpolation on a disk shaped image;
+   evaluation of the scheme with different interpolation methods
+   analytic extiction time of the disk is given by 1/2*sigma^2 where sigma is
+   the radius of the disk
 */
    
 {
 long     i, j;            /* loop variables */
-double   **v              /* copy of the image u */;
+double   **u;             /* image */
+double   **v;             /* copy of the image u (remains constant) */;
+double   **disk;          /* shrinking disk image solution */
+double   **diff;          /* difference to numerical solution */
 double   **coeff_x;       /* hermite coefficients in x direction */
 double   **coeff_y;       /* hermite coefficients in y direction */
-double   **coeff_quint_x; /* hermite quintic coefficients in x direction */
-double   **coeff_quint_y; /* hermite quintic coefficients in y direction */
 double   max, min;        /* largest, smallest grey value */
 double   mean;            /* average grey value */
 double   std;             /* standard deviation */
-double   eps;             /* small constant */
+double   cutoff;          /* zero threshold value */
 long     method;          /* interpolation method parameter */
-char     divider[81];     /* string for list divider */
 long     k[6];            /* iteration indices for different methods */
+double   t;               /* auxiliary variable for current time step */
+double   t_ext;           /* auxiliary variable, extinction time */
+double   t_ext_appr;      /* auxiliary variable, approximated extinction time */
+long     sample_dist;     /* distance between two sampled time steps */
+long     sample_rate;     /* sample rate for plots */
+long     sample_count;    /* number of samples positions */
+double   area;
+double   slope;           /* estimated slope of the line A(t) = disk area */
+double   slope_error;     /* area between estimated and analytic solution */
+double   sum_t_sqr;       /* sum_{i=1}^N t_i^2 */
+double   error;           /* mean squared error of approx. solution */
 
 /* ---- allocate memory ---- */
-alloc_double_matrix (&v, nx+2, ny+2);
-alloc_double_matrix (&coeff_y, nx+2, (ny+2-1) * 4);
-alloc_double_matrix (&coeff_x, ny+2, (nx+2-1) * 4);
 
-alloc_double_matrix (&coeff_quint_y, nx+2, (ny+2-1) * 6);
-alloc_double_matrix (&coeff_quint_x, ny+2, (nx+2-1) * 6);
+alloc_double_matrix (&v, nx+2, ny+2);
+alloc_double_matrix (&u, nx+2, ny+2);
+alloc_double_matrix (&disk, nx+2, ny+2);
+alloc_double_matrix (&diff, nx+2, ny+2);
+alloc_double_matrix (&coeff_y, nx+2, (ny+2-1) * 6);
+alloc_double_matrix (&coeff_x, ny+2, (nx+2-1) * 6);
+
+/* initialize disk image with partial area effect */
+generate_disk_image_partial_area(nx, ny, sigma, u);
+
+/* extinction time 1/2 sigma^2 h^2 */
+t_ext = 0.5 * sigma * sigma * h * h;
+
+/* initialize sample rate */
+sample_rate = sigma*sigma/64;  
 
 /* copy the image u to v */
 for(i = 0; i < nx+2; i++) {
@@ -2447,105 +3718,128 @@ for(i = 0; i < nx+2; i++) {
    }
 }
 
-/* initialize list divider */
-for(i = 0; i < 80; i++) {
-   divider[i] = '-';
-}
-divider[80] = '\0';
+/* initialize cutoff */
+cutoff = 0.499;
 
-/* initialize eps */
-eps = 0.499;
+printf("simga = %3.1lf\n", sigma);
 
 /* ---- loop through interpolation methods ---- */
-
-for(i = 1; i < 6; i++) {
-   k[i] = i*1000;
-}
-
-for(method = 1; method <= 5; method++) {
-   /* get a fresh copy of the original image */
+for(method = 0; method <= 5; method++) { 
+   if(method == 1)
+      continue;
+   
+   /* fresh counter for snapshots */
+   //sc = 0;
+   /* fresh copy of the original image */
    for(i = 0; i < nx+2; i++) {
       for(j = 0; j < nx+2; j++) {
          u[i][j] = v[i][j];
       }
    }
-   /* initialize maximal grey value */
-   max = 255.0;
-   k[method] = 0;
-   while(max > eps) {
+
+   max = 255.0;      /* maximal grey value */
+   k[method] = 0;    /* start with method 0 */
+   slope = 0;        /* set slope of A(t) to zero */
+   sample_count = 0; /* set sample count to zero */
+   error = 0.0;      /* set error to zero */
+   slope_error = 0.0;/* set slope error to zero */
+   t = 0.0;          /* initialize time */
+   sum_t_sqr = 0.0;  /* initialize squared time steps sum */
+   /* set sample distance (1/tau for k-units) */
+   sample_dist = sample_rate/tau;
+   
+   
+   /* run evolution with current method until image vanished 
+   (or ext. time is reached) */
+   while((max > cutoff) && (t <= t_ext)){
+
+      /* increment step counter for current method */
       k[method]++;
-      printf("t = %lf\n", k[method]*tau*h);
-      if(k[method]*tau > 5*sigma * sigma * h * h) {
+
+      /* update current time value */
+      t = k[method]*tau;
+      
+      /* --- write plot sample data: area of shrunk disk --- */
+      if((k[method] % sample_dist) == 0) { 
+         /* get copy of the original image for editing */
+         for(i = 0; i < nx+2; i++) {
+            for(j = 0; j < nx+2; j++) {
+               disk[i][j] = u[i][j];
+            }
+         }
+         /* get area as sum of grey values divided by max value */
+         area = 0.0;
+         for(i = 1; i <= nx; i++) {
+            for(j = 1; j <= ny; j++) {
+               area += u[i][j];
+            }
+         }
+         area = area / 255.0;
+         /* update slope */
+         slope += t * (area - PI * sigma * sigma);
+         sum_t_sqr += t*t;
+         sample_count++;
+         /*analytic solution with partial area effect*/
+         generate_disk_image_partial_area(nx, ny, sqrt(sigma*sigma-2*t), disk);
+         diff_image(nx, ny, u, disk, diff);  
+         /* update mse error */
+         error += mse(diff, nx, ny);
+      }      
+ 
+      /* hard break condition */
+      if(t > 10 * t_ext) {
          /* factor 10 above theoretical extiction time, abort */
          printf(
             "theoretical extiction time: %5.3lf\n",
-            0.5 * sigma * sigma * h * h
+            t_ext
          );
          printf("exceeded extinction time by factor 10, aborting\n");
          break;
       }
-      analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
-      if (method != 5) {
+
+      /* --- apply mcm method step --- */
+      if(method == 0) {
+         /* delta stencil */
+         mcm_delta (tau, 0.0, 0.0, nx, ny, h, u);
+      }
+      else {
+         /* interpolation scheme */
          mcm_step (tau, nx, ny, h, u, coeff_x, coeff_y, method);
       }
-      else if (method == 5) {
-         mcm_step (tau, nx, ny, h, u, coeff_quint_x, coeff_quint_y, method);
-      }
+
+      /* obtain max image value for stop condition */
+      analyse_grey_double (u, nx, ny, &min, &max, &mean, &std); 
+      
+
    }
+
+   /* finalize slope estimation */
+   slope /= sum_t_sqr;
+   //slope_error = 0.5*fabs(slope+2*PI) * t_ext * t_ext;#
+   t_ext_appr = -PI*sigma*sigma/slope;
+   slope_error = 100*fabs(t_ext-t_ext_appr)/t_ext;
+   /* finalize mse error estimation */
+   error /= sample_count;
+   /* console output */
+   printf(
+      "%ld %10.3lf %10.3lf %10.3lf\n", 
+      method,
+      slope,
+      slope_error, 
+      //fabs(slope + 2*PI)/(2*PI)*100.0,
+      error
+   );
+
 }
 
-printf("\n");
-printf("%s\n", divider);
-printf("Disk Shrinkage with Explicit MCM Scheme\n");
-printf("disk radius = %lf px\n", sigma);
-printf("time step size tau = %5.3lf\n", tau);
-printf("pixel size h = %lf\n", h);
-printf(
-   "analytical extinction time t = %5.3lf\n", 
-   0.5 * sigma * sigma * h * h
-);
-printf("%s\n", divider);
-printf("method                                    ");
-printf("t_ext          error (%%)\n");        
-printf(
-   "Analytic solution                         %5.3lf\n", 
-   0.5 * sigma * sigma * h * h
-);             
-printf(
-   "Linear Spline                             %5.3lf       %5.3lf\n", 
-   k[1] * tau * h, 
-   100.0*(fabs((0.5*sigma*sigma*h*h) - k[1]*tau*h)) / (0.5*sigma*sigma*h*h)
-);
-printf(
-   "Cubic Spline                              %5.3lf       %5.3lf\n",
-   k[2] * tau * h, 
-   100.0*(fabs((0.5*sigma*sigma*h*h) - k[2]*tau*h)) / (0.5*sigma*sigma*h*h)
-);
-printf(
-   "Fritsch-Carlson (1980)                    %5.3lf       %5.3lf\n",
-   k[3] * tau * h, 
-   100.0*(fabs((0.5*sigma*sigma*h*h) - k[3]*tau*h)) / (0.5*sigma*sigma*h*h)
-);
-printf(
-   "Extended Two-Sweep (Eisenstat 1985)       %5.3lf       %5.3lf\n",
-   k[4] * tau * h, 
-   100.0*(fabs((0.5*sigma*sigma*h*h) - k[4]*tau*h)) / (0.5*sigma*sigma*h*h)
-);
-printf(
-   "MQSI (Lux 2020)                           %5.3lf       %5.3lf\n",
-   k[5] * tau * h, 
-   100.0*(fabs((0.5*sigma*sigma*h*h) - k[5]*tau*h)) / (0.5*sigma*sigma*h*h)
-);
-printf("%s\n", divider);
-
 /* ---- free memory ---- */
+free_double_matrix (u, nx+2, ny+2);
 free_double_matrix (v, nx+2, ny+2);
+free_double_matrix (diff, nx+2, ny+2);
+free_double_matrix (disk, nx+2, ny+2);
 
-free_double_matrix (coeff_x, ny+2, (nx+2-1) * 4);
-free_double_matrix (coeff_y, nx+2, (ny+2-1) * 4);
-
-free_double_matrix (coeff_quint_x, ny+2, (nx+2-1) * 6);
-free_double_matrix (coeff_quint_y, nx+2, (ny+2-1) * 6);
+free_double_matrix (coeff_x, ny+2, (nx+2-1) * 6);
+free_double_matrix (coeff_y, nx+2, (ny+2-1) * 6);
 
 return;
 
@@ -2614,14 +3908,26 @@ char    comments[1600];       /* string for comments */
 
 /* main menu parameters */
 char    in[80];               /* for reading data */
-char    out[80];              /* for reading data */
+char    out[128];             /* for writing data */
 double  tau;                  /* time step size */
 long    kmax;                 /* number of iterations */
 long    method;               /* inteprolation method parameter */
 
 /* testing menu parameters (testing mode) */
-long    test_method;           /* test method parameter */
-double  sigma;                 /* raduis of disk */
+long    i, j, k;              /* loop variables */
+long    test_method;          /* test method parameter */
+double  sigma;                /* raduis of disk */
+double  len;                  /* side length of square */
+long    nx_new, ny_new;       /* new image dimensions */
+double  **w;                  /* image copy */
+long    row;                  /* image row */
+long    deg;                  /* degree of the polynomials */
+double  *Y;                   /* sample values */
+double  *coeff;               /* Hermite coefficients */
+long    t[8];                 /* snapshot time steps */
+double  coeffs[9];            /* coefficients */
+
+srand(time(NULL));            /* rng initialization */
 
 /* method descriptions */
 char description[5][80] = {
@@ -2670,15 +3976,23 @@ printf ("    copying, hiring, and selling prohibited.      \n\n");
 printf ("**************************************************\n\n");
 
 /* initialize pixel size h */
-h = 2.0;
+h = 1.0;
 
 /* testing/evaluation mode */
 if(tflag) {
-   printf("TESTING/EVALUATION\n\n");
+   printf("EXPERIMENTS/EVALUATION\n\n");
    printf("1: disk shrinkage\n");
    printf("2: generate disk image\n");
+   printf("3: generate square image\n");
+   printf("4: resize image\n");
+   printf("5: interpolate image row to file\n");
+   printf("6: test accurate polynomial reproduction order\n");
+   printf("7: plot interpolated polynomials for all methods\n");
+   printf("8: mcm image sequence at 7 time steps (t=900 to t=3000)\n");
+   printf("9: polynomial to file for plotting");
+   printf("10: generate disk image with partial area effect\n");
    printf("\n");
-   printf("test method number:                        ");
+   printf("test method number:          ");
    
    /* read test method parameter */
    read_long(&test_method);
@@ -2690,23 +4004,23 @@ if(tflag) {
       /*                 disk shrinkage                    */
       
       /* -- read input image (pgm format P5) -- */
-      printf ("input image (pgm):                         ");
-      read_string (in);
-      read_pgm_to_double (in, &nx, &ny, &u); 
       
-      /* read disk radius */
-      printf("disk radius:                               ");
-      read_double (&sigma);
-      
+
       /* read time step size */
-      printf ("time step size tau (<%5.3lf):               ", 1.0/2.0*h);
+      printf ("time step size tau (<%5.3lf):               ", h*h/2.0);
       read_double (&tau);
-      
-      disk_shrinkage (tau, nx, nx, h, u, sigma);
-      
-      /* ---- free memory ---- */
-      free_double_matrix (u, nx+2, ny+2);
-      
+
+      printf("0: Delta scheme\n");
+      for(method = 2; method <= 5; method++) {
+         printf("%ld: %s\n", method, description[method-1]);
+      }
+      printf("method, slope, area between lines, avg mse of samples\n");
+      for(sigma = 16; sigma <= 128; sigma += 16) {
+         nx = 4*sigma;
+         ny = 4*sigma;
+         disk_shrinkage (tau, nx, nx, h, sigma);
+      }      
+            
       break; 
       /* --------------------------------------------------*/
       
@@ -2751,108 +4065,410 @@ if(tflag) {
       
       break;
       /* --------------------------------------------------*/
+
+   case 3:
+      /* --------------------------------------------------*/
+      /*          generate square shaped image               */
       
+      /* read disk radius */
+      printf("square side length:                        ");
+      read_double (&len);
+      
+      /* read image dimensions */
+      printf("image dimensions (nx=ny)                   ");
+      read_long(&nx);
+      ny = nx;
+      
+      /* read output file name */
+      printf ("output image (pgm):                        ");
+      read_string (out);
+      
+      /* allocate memory */
+      alloc_double_matrix (&u, nx+2, ny+2);
+      
+      /* generate image of size nx*ny with disk of radius sigma */
+      generate_square_image (nx, ny, len, u);
+      
+      /* ---- write output image (pgm format) ---- */
+
+      /* write parameter values in comment string */
+      comments[0] = '\0';
+      comment_line (comments, "# square\n");
+      comment_line (comments, "# side length: %5.3lf\n", len); 
+      
+   
+      /* write image */
+      write_double_to_pgm (u, nx, ny, out, comments);
+      printf ("output image %s successfully written\n\n", out);
+     
+      /* free memory */
+      free_double_matrix (u, nx+2, ny+2);
+      
+      break;
+      /* --------------------------------------------------*/
+      
+
+   case 4:
+      /* --------------------------------------------------*/
+      /*                 resize image                      */
+
+      printf ("input image (pgm):           ");
+      read_string (in);
+
+      printf ("output image (pgm):          ");
+      read_string (out);
+
+      /* print interpolation methods table */
+      print_interpolation_methods();
+
+      printf ("method (1-5):                ");
+      read_long (&method);
+
+      printf ("new x-dimension:             ");
+      read_long (&nx_new);
+
+      printf ("new y-dimension:             ");
+      read_long (&ny_new);
+
+      read_pgm_to_double (in, &nx, &ny, &u);
+
+      /* reflecting dummy boundaries */
+      dummies_double (u, nx, ny);
+
+      resize_image (method, nx, ny, u, nx_new, ny_new, &w);
+
+      /* write image */
+      comments[0] = '\0';
+      comment_line(comments, "#resize image\n");
+      comment_line(comments, "#original image: %s\n", in);
+      write_double_to_pgm (w, nx_new, ny_new, out, comments);
+      printf ("output image %s successfully written\n\n", out);
+
+      /* free memory */
+      free_double_matrix (u, nx+2, ny+2);
+      free_double_matrix (w, nx_new+2, ny_new+2);
+
+      break;
+
+      /* --------------------------------------------------*/
+
+   case 5:
+      /* --------------------------------------------------*/
+      /*       interpolate single row from a pgm image     */
+   
+
+      /* read input image (pgm format P5) */
+      printf ("input image (pgm):\n");
+      read_string (in);
+      printf ("\n");
+      read_pgm_to_double (in, &nx, &ny, &u);
+         
+      /*  read row parameter */
+      printf("row to interpolate\n");
+      printf("(integer between 1 and %ld)\n", ny);
+      read_long (&row);
+      if( (row < 1) || (row > ny))
+         {
+         printf("inavid parameter, aborting\n");
+         exit(1);
+         }
+      printf("\n");
+      
+      /* print interpolation methods table */
+      print_interpolation_methods();
+
+      printf ("method (1-5):                ");
+      read_long (&method);
+      
+      /* reflecting dummy boundaries */
+      dummies_double (u, nx, ny);
+
+      /* interpolate and write breakpoints and sample values to file */
+      interpolate_image_row_to_file (in, u, nx, method, row);
+
+
+      /* free memory */
+      free_double_matrix (u, nx+2, ny+2);
+      
+      break;
+      /* --------------------------------------------------*/
+
+   case 6:
+      /* --------------------------------------------------*/
+      /*       polynomial accurate reproduction test       */
+
+      /* print interpolation methods table */
+      print_interpolation_methods();
+
+      printf ("method (1-5):                ");
+      read_long (&method);
+
+      printf("polynomial degree (>=2):     ");
+      read_long (&deg);
+
+      /* allocate memory */
+      alloc_double_vector(&Y, 11);
+      alloc_double_vector(&coeff, 10*6);
+   
+      test_reproduction_order(deg, method);
+
+      /* free memory */
+      free(Y);
+      free(coeff);
+
+      break;
+
+      /* --------------------------------------------------*/
+
+   case 7: 
+      /* --------------------------------------------------*/  
+      /*   plot interpolated polynomials for all methods   */
+
+      printf("polynomial degree (>=2):     ");
+      read_long (&deg);
+
+      random_poly_to_file(deg);
+
+
+      break;
+      /* --------------------------------------------------*/
+
+   case 8:
+      /* mcm image sequence at 7 time steps (t=900 to t=3000) */
+
+      /* initialize time steps */
+      t[0] = 0;
+      t[1] = 900;
+      t[2] = 3100;
+      t[3] = 5300;
+      t[4] = 7800;
+      t[5] = 13000;
+      t[6] = 22000;
+      t[7] = 30000;
+
+      /* -- read input image (pgm format P5) -- */
+      printf ("input image (pgm):                         ");
+      read_string (in);
+
+      read_pgm_to_double (in, &nx, &ny, &u);
+
+      /* alloc memory */
+      alloc_double_matrix(&w, nx+2, ny+2);
+
+      printf ("\n");
+
+      /* ---- read parameters ---- */
+
+      /* read time step size */
+      printf ("time step size tau (<%5.3lf):               ", h*h/2.0);
+      read_double (&tau);
+
+      /* copy image */
+      for (i=1; i<=nx; i++) {
+          for (j=1; j<=ny; j++) {
+              w[i][j] = u[i][j];
+          }
+      }
+
+      for(method = 1; method <= 5; method++) {
+         /* reset image to original image */
+         for (i=1; i<=nx; i++) {
+             for (j=1; j<=ny; j++) {
+                 u[i][j] = w[i][j];
+             }
+         }
+         /* reflecting dummy boundaries */
+         dummies_double (u, nx, ny);
+
+         for(k = 1; k <= 7; k++) {
+            /* iterations until the next snapshot time step */
+            kmax = (t[k]-t[k-1])/tau;
+
+            /* print output file name */
+            snprintf(out, sizeof(char) * 128, "m%ld-t%ld-%s",method, t[k], in);
+
+            /* ---- process image ---- */
+
+            /* process image */
+            mcm(tau, kmax, nx, ny, h, u, method);
+
+            /* analyse processed image */   
+            analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
+
+            /* ---- write output image (pgm format) ---- */
+
+            /* write parameter values in comment string */
+            comments[0] = '\0';
+            comment_line (comments, "# MCM, explicit scheme with spline interpolation\n");
+            comment_line (comments, "# initial image:        %s\n", in);
+            comment_line (comments, "# interpolation method: %s\n", description[method-1]);
+            comment_line (comments, "# tau:       %8.2lf\n", tau);
+            comment_line (comments, "# kmax:      %8ld\n",   (long)(t[k]/tau));
+            comment_line (comments, "# min:       %8.2lf\n", min);
+            comment_line (comments, "# max:       %8.2lf\n", max);
+            comment_line (comments, "# mean:      %8.2lf\n", mean);
+            comment_line (comments, "# st. dev.:  %8.2lf\n", std);
+          
+            /* write image */
+            write_double_to_pgm (u, nx, ny, out, comments);
+            printf ("output image %s successfully written\n\n", out);
+         }
+      }
+
+      /* ---- free memory ---- */
+      free_double_matrix (u, nx+2, ny+2);
+      free_double_matrix (w, nx+2, ny+2);
+
+      break;
+      /* --------------------------------------------------*/
+
+   case 9: 
+      /* print specific sampled polynomial to file for plotting */
+      
+      /* deg 2: int (x-2) */
+      coeffs[0] = 0.0;
+      coeffs[1] = -2.0;
+      coeffs[2] = 0.5;
+      /* deg 3: int (x-1)(x-2) */
+      coeffs[0] = 0.0;
+      coeffs[1] = 2.0;
+      coeffs[2] = -3.0/2.0;
+      coeffs[3] = 1.0/3.0;
+      /* deg 4: int (x-1)(x-2)(x-3) */
+      coeffs[0] = 0.0;
+      coeffs[1] = -6.0;
+      coeffs[2] = 11.0/2;
+      coeffs[3] = -2.0;
+      coeffs[4] = 1.0/4.0;
+      /* deg 7: int (x-1)(x-2)(x-3)(x-4)(x-5)(x) */
+      coeffs[0] = 0.0;
+      coeffs[1] = 0.0;
+      coeffs[2] = -60.0;
+      coeffs[3] = 274.0/3;
+      coeffs[4] = -225.0/4.0;
+      coeffs[5] = 17.0;
+      coeffs[6] = -5.0/2;
+      coeffs[7] = 1.0/7;
+
+      specific_poly_to_file(7,coeffs);
+
+      break;
+   /* --------------------------------------------------*/
+
+   case 10:
+      /* partial area test */
+
+      nx = 256;
+      ny = 256;
+
+      printf("output image:                            ");
+      read_string(out);
+
+      alloc_double_matrix(&u, nx+2, ny+2);
+      generate_disk_image_partial_area(nx, ny, 64, u);
+
+      comments[0] = '\0';
+      write_double_to_pgm (u, nx, ny, out, comments);
+      printf ("output image %s successfully written\n\n", out);
+      
+      free_double_matrix(u, nx, ny);
+      
+
+      break;
+
    default: 
       printf("invalid test method number, aborting\n"); 
       exit(1);
       /* --------------------------------------------------*/
    }
+   return 0;
 }
 
 
-else {
-   /* --------------------------------------------------*/
-   /*                 main program                      */
-   
-   /* -- read input image (pgm format P5) -- */
-   printf ("input image (pgm):                         ");
-   read_string (in);
+/* --------------------------------------------------*/
+/*                 main program                      */
 
-   read_pgm_to_double (in, &nx, &ny, &u);
-   printf ("\n");
+/* -- read input image (pgm format P5) -- */
+printf ("input image (pgm):                         ");
+read_string (in);
 
-   /* print interpolation methods table */
-   print_interpolation_methods();
+read_pgm_to_double (in, &nx, &ny, &u);
+printf ("\n");
 
-   /* ---- read parameters ---- */
-   /* read interpolation method */
-   printf ("\n");
-   printf ("interpolation method (1-5):                ");
-   read_long (&method);
+/* print interpolation methods table */
+print_interpolation_methods();
 
-   /* read time step size */
-   printf ("time step size tau (<%5.3lf):               ", 1.0/2.0*h);
-   read_double (&tau);
+/* ---- read parameters ---- */
+/* read interpolation method */
+printf ("\n");
+printf ("interpolation method (1-5):                ");
+read_long (&method);
 
-   /* read number of iterations */
-   printf ("number of iterations (>0):                 ");
-   read_long (&kmax);
+/* read time step size */
+printf ("time step size tau (<%5.3lf):               ", h*h/2.0);
+read_double (&tau);
 
-   /* read output file name */
-   printf ("output image (pgm):                        ");
-   read_string (out);
+/* read number of iterations */
+printf ("number of iterations (>0):                 ");
+read_long (&kmax);
 
-   printf ("\n");
+/* read output file name */
+printf ("output image (pgm):                        ");
+read_string (out);
 
-
-   /* ---- analyse initial image ---- */
-
-   analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
-   printf ("initial image\n");
-   printf ("minimum:          %8.2lf \n", min);
-   printf ("maximum:          %8.2lf \n", max);
-   printf ("mean:             %8.2lf \n", mean);
-   printf ("standard dev.:    %8.2lf \n\n", std);
+printf ("\n");
 
 
-   /* ---- process image ---- */
+/* ---- analyse initial image ---- */
 
-   /* reflecting dummy boundaries */
-
-   dummies_double (u, nx, ny);
-
-   /* process image */
-   mcm(tau, kmax, nx, ny, h, u, method);
-
-   /* analyse processed image */   
-   analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
-   printf ("\n\nprocessed image:\n");
-   printf ("minimum:          %8.2lf \n", min);
-   printf ("maximum:          %8.2lf \n", max);
-   printf ("mean:             %8.2lf \n", mean);
-   printf ("standard dev.:    %8.2lf \n\n", std);
+analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
 
 
-   /* ---- write output image (pgm format) ---- */
+/* ---- process image ---- */
 
-   /* write parameter values in comment string */
-   comments[0] = '\0';
-   comment_line (comments, "# MCM, explicit scheme with spline interpolation\n");
-   comment_line (comments, "# initial image:        %s\n", in);
-   comment_line (comments, "# interpolation method: %s\n", description[method-1]);
-   comment_line (comments, "# tau:       %8.2lf\n", tau);
-   comment_line (comments, "# kmax:      %8ld\n", kmax);
-   comment_line (comments, "# min:       %8.2lf\n", min);
-   comment_line (comments, "# max:       %8.2lf\n", max);
-   comment_line (comments, "# mean:      %8.2lf\n", mean);
-   comment_line (comments, "# st. dev.:  %8.2lf\n", std);
+/* reflecting dummy boundaries */
+dummies_double (u, nx, ny);
+
+/* process image */
+mcm(tau, kmax, nx, ny, h, u, method);
+
+printf ("\ninitial image\n");
+printf ("minimum:          %8.2lf \n", min);
+printf ("maximum:          %8.2lf \n", max);
+printf ("mean:             %8.2lf \n", mean);
+printf ("standard dev.:    %8.2lf \n\n", std);
+
+/* analyse processed image */   
+analyse_grey_double (u, nx, ny, &min, &max, &mean, &std);
+printf ("processed image:\n");
+printf ("minimum:          %8.2lf \n", min);
+printf ("maximum:          %8.2lf \n", max);
+printf ("mean:             %8.2lf \n", mean);
+printf ("standard dev.:    %8.2lf \n\n", std);
 
 
-   /* write image */
-   write_double_to_pgm (u, nx, ny, out, comments);
-   printf ("output image %s successfully written\n\n", out);
+/* ---- write output image (pgm format) ---- */
 
-   /* ---- free memory ---- */
-   free_double_matrix (u, nx+2, ny+2);
+/* write parameter values in comment string */
+comments[0] = '\0';
+comment_line (comments, "# MCM, explicit scheme with spline interpolation\n");
+comment_line (comments, "# initial image:        %s\n", in);
+comment_line (comments, "# interpolation method: %s\n", description[method-1]);
+comment_line (comments, "# tau:       %8.2lf\n", tau);
+comment_line (comments, "# kmax:      %8ld\n", kmax);
+comment_line (comments, "# min:       %8.2lf\n", min);
+comment_line (comments, "# max:       %8.2lf\n", max);
+comment_line (comments, "# mean:      %8.2lf\n", mean);
+comment_line (comments, "# st. dev.:  %8.2lf\n", std);
 
-   return(0);
 
-   }
-   
+/* write image */
+write_double_to_pgm (u, nx, ny, out, comments);
+printf ("output image %s successfully written\n\n", out);
+
+/* ---- free memory ---- */
+free_double_matrix (u, nx+2, ny+2);
+
+return(0);
+
 }  /* main */
-
-
-
-
-
-
